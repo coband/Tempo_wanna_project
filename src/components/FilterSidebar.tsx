@@ -15,38 +15,36 @@ interface FilterSidebarProps {
 
 interface FilterState {
   genres: string[];
+  levels: string[];
   yearRange: [number, number];
   availability: string[];
   location: string[];
 }
 
 const defaultGenres = [
-  "Fiction",
-  "Non-Fiction",
-  "Science Fiction",
-  "Mystery",
-  "Romance",
-  "Biography",
-  "History",
-  "Children's",
-  "Young Adult",
-  "Poetry",
+  "Mathematik",
+  "Deutsch",
+  "Französisch",
+  "NMG",
+  "Sport",
+  "Musik",
+  "Englisch",
+  "Bildnerisches Gestalten",
+  "TTG",
+  "Divers",
 ];
+
+const defaultLevels = ["KiGa", "Unterstufe", "Mittelstufe"];
 
 const defaultLocations = [
-  "First Floor",
-  "Second Floor",
-  "Reference Section",
-  "Children's Area",
-  "Special Collections",
+  "Bibliothek",
+  "Lehrerzimmer",
+  "Klassenzimmer",
+  "Materialraum",
+  "Archiv",
 ];
 
-const defaultAvailability = [
-  "Available",
-  "Checked Out",
-  "On Hold",
-  "Reference Only",
-];
+const defaultAvailability = ["Verfügbar", "Ausgeliehen"];
 
 const FilterSidebar = ({
   onFilterChange = () => {},
@@ -55,13 +53,15 @@ const FilterSidebar = ({
 }: FilterSidebarProps) => {
   const [filters, setFilters] = React.useState<FilterState>({
     genres: [],
-    yearRange: [1900, 2024],
+    levels: [],
+    yearRange: [1900, 2025],
     availability: [],
     location: [],
   });
 
   const handleFilterChange = (newFilters: Partial<FilterState>) => {
     const updatedFilters = { ...filters, ...newFilters };
+    console.log("Updating filters:", { old: filters, new: updatedFilters });
     setFilters(updatedFilters);
     onFilterChange(updatedFilters);
   };
@@ -69,7 +69,7 @@ const FilterSidebar = ({
   if (!isOpen) return null;
 
   return (
-    <div className="w-[280px] h-full bg-white border-r border-gray-200 p-4 flex flex-col">
+    <div className="w-[280px] h-full bg-white border-r border-gray-200 p-4 flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-semibold">Filters</h2>
         <Button variant="ghost" size="icon" onClick={onClose}>
@@ -81,7 +81,7 @@ const FilterSidebar = ({
         <div className="space-y-6">
           {/* Genre Filter */}
           <div className="space-y-4">
-            <h3 className="font-medium">Genre</h3>
+            <h3 className="font-medium">Fach</h3>
             <div className="space-y-2">
               {defaultGenres.map((genre) => (
                 <div key={genre} className="flex items-center space-x-2">
@@ -103,21 +103,47 @@ const FilterSidebar = ({
 
           <Separator />
 
+          {/* Level Filter */}
+          <div className="space-y-4">
+            <h3 className="font-medium">Stufe</h3>
+            <div className="space-y-2">
+              {defaultLevels.map((level) => (
+                <div key={level} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`level-${level}`}
+                    checked={filters.levels.includes(level)}
+                    onCheckedChange={(checked) => {
+                      const newLevels = checked
+                        ? [...filters.levels, level]
+                        : filters.levels.filter((l) => l !== level);
+                      handleFilterChange({ levels: newLevels });
+                    }}
+                  />
+                  <Label htmlFor={`level-${level}`}>{level}</Label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Separator />
+
           {/* Publication Year Filter */}
           <div className="space-y-4">
-            <h3 className="font-medium">Publication Year</h3>
-            <Slider
-              min={1900}
-              max={2024}
-              step={1}
-              value={filters.yearRange}
-              onValueChange={(value) =>
-                handleFilterChange({ yearRange: value as [number, number] })
-              }
-            />
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>{filters.yearRange[0]}</span>
-              <span>{filters.yearRange[1]}</span>
+            <h3 className="font-medium">Erscheinungsjahr</h3>
+            <div className="w-[200px] space-y-2">
+              <Slider
+                min={1900}
+                max={2025}
+                step={1}
+                value={filters.yearRange}
+                onValueChange={(value) =>
+                  handleFilterChange({ yearRange: value as [number, number] })
+                }
+              />
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>{filters.yearRange[0]}</span>
+                <span>{filters.yearRange[1]}</span>
+              </div>
             </div>
           </div>
 
@@ -125,7 +151,7 @@ const FilterSidebar = ({
 
           {/* Availability Filter */}
           <div className="space-y-4">
-            <h3 className="font-medium">Availability</h3>
+            <h3 className="font-medium">Verfügbarkeit</h3>
             <div className="space-y-2">
               {defaultAvailability.map((status) => (
                 <div key={status} className="flex items-center space-x-2">
@@ -149,7 +175,7 @@ const FilterSidebar = ({
 
           {/* Location Filter */}
           <div className="space-y-4">
-            <h3 className="font-medium">Location</h3>
+            <h3 className="font-medium">Standort</h3>
             <div className="space-y-2">
               {defaultLocations.map((location) => (
                 <div key={location} className="flex items-center space-x-2">
@@ -175,12 +201,14 @@ const FilterSidebar = ({
 
       <Button
         onClick={() => {
-          setFilters({
+          const clearedFilters = {
             genres: [],
             yearRange: [1900, 2024],
             availability: [],
             location: [],
-          });
+          };
+          setFilters(clearedFilters);
+          onFilterChange(clearedFilters);
         }}
         variant="outline"
         className="w-full"

@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) throw error;
     setUser(data.user);
-    return data;
+    return { user: data.user };
   };
 
   const signUp = async (email: string, password: string) => {
@@ -40,9 +40,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setUser(null);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      // Wait for the session to be cleared
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        setUser(null);
+      } else {
+        throw new Error("Session still active");
+      }
+    } catch (error) {
+      console.error("SignOut error:", error);
+      throw error;
+    }
   };
 
   return (

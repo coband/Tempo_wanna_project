@@ -12,29 +12,17 @@ import {
   CommandList,
 } from "./ui/command";
 
-interface SearchSuggestion {
-  id: string;
-  title: string;
-  type: "book" | "author" | "isbn";
-}
-
 interface SearchHeaderProps {
+  className?: string;
   onSearch?: (query: string) => void;
-  suggestions?: SearchSuggestion[];
+  books?: any[];
   isLoading?: boolean;
 }
 
-const defaultSuggestions: SearchSuggestion[] = [
-  { id: "1", title: "The Great Gatsby", type: "book" },
-  { id: "2", title: "F. Scott Fitzgerald", type: "author" },
-  { id: "3", title: "9780743273565", type: "isbn" },
-  { id: "4", title: "To Kill a Mockingbird", type: "book" },
-  { id: "5", title: "Harper Lee", type: "author" },
-];
-
 const SearchHeader = ({
+  className = "",
   onSearch = () => {},
-  suggestions = defaultSuggestions,
+  books = [],
   isLoading = false,
 }: SearchHeaderProps) => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,16 +34,19 @@ const SearchHeader = ({
 
   const clearSearch = () => {
     setSearchQuery("");
+    onSearch("");
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white border-b border-gray-200 px-4 py-3 shadow-sm">
-      <div className="max-w-7xl mx-auto flex items-center gap-4">
+    <header
+      className={`sticky top-0 z-50 w-full bg-white border-b border-gray-200 px-4 py-3 shadow-sm ${className}`}
+    >
+      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center gap-4">
         <div className="flex-1 flex items-center gap-2">
           <div className="relative flex-1 max-w-2xl">
             <Input
               type="text"
-              placeholder="Search by title, author, or ISBN..."
+              placeholder="Suche nach Titel, Autor, ISBN..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pr-10"
@@ -72,7 +63,7 @@ const SearchHeader = ({
           </div>
           <Button onClick={handleSearch} disabled={isLoading}>
             <Search className="w-4 h-4 mr-2" />
-            Search
+            Suchen
           </Button>
         </div>
 
@@ -80,51 +71,25 @@ const SearchHeader = ({
           <Command>
             <CommandInput placeholder="Type to search..." />
             <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandGroup heading="Books">
-                {suggestions
-                  .filter((s) => s.type === "book")
-                  .map((suggestion) => (
-                    <CommandItem
-                      key={suggestion.id}
-                      onSelect={() => {
-                        setSearchQuery(suggestion.title);
-                        setIsCommandOpen(false);
-                      }}
-                    >
-                      {suggestion.title}
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
-              <CommandGroup heading="Authors">
-                {suggestions
-                  .filter((s) => s.type === "author")
-                  .map((suggestion) => (
-                    <CommandItem
-                      key={suggestion.id}
-                      onSelect={() => {
-                        setSearchQuery(suggestion.title);
-                        setIsCommandOpen(false);
-                      }}
-                    >
-                      {suggestion.title}
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
-              <CommandGroup heading="ISBN">
-                {suggestions
-                  .filter((s) => s.type === "isbn")
-                  .map((suggestion) => (
-                    <CommandItem
-                      key={suggestion.id}
-                      onSelect={() => {
-                        setSearchQuery(suggestion.title);
-                        setIsCommandOpen(false);
-                      }}
-                    >
-                      {suggestion.title}
-                    </CommandItem>
-                  ))}
+              <CommandEmpty>Keine Ergebnisse gefunden.</CommandEmpty>
+              <CommandGroup heading="Bücher">
+                {books.map((book) => (
+                  <CommandItem
+                    key={book.id}
+                    onSelect={() => {
+                      setSearchQuery(book.title);
+                      setIsCommandOpen(false);
+                      onSearch(book.title);
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span>{book.title}</span>
+                      <span className="text-sm text-gray-500">
+                        {book.author} • {book.subject} • {book.level}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
               </CommandGroup>
             </CommandList>
           </Command>
