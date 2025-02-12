@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ui/use-toast";
 
 interface SignUpFormProps {
   onSuccess: () => void;
@@ -9,31 +11,37 @@ interface SignUpFormProps {
 
 export default function SignUpForm({ onSuccess }: SignUpFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const { signUp } = useAuth();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await signUp(email, password);
+      toast({
+        title: "Success",
+        description: "Please check your email to confirm your account",
+      });
       onSuccess();
-    }, 1000);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
     <div className="grid gap-6">
       <form onSubmit={onSubmit}>
         <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Full Name</Label>
-            <Input
-              id="name"
-              placeholder="John Doe"
-              type="text"
-              disabled={isLoading}
-              required
-            />
-          </div>
           <div className="grid gap-2">
             <Label htmlFor="email">Email</Label>
             <Input
@@ -44,6 +52,8 @@ export default function SignUpForm({ onSuccess }: SignUpFormProps) {
               autoComplete="email"
               autoCorrect="off"
               disabled={isLoading}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
@@ -53,6 +63,8 @@ export default function SignUpForm({ onSuccess }: SignUpFormProps) {
               id="password"
               type="password"
               disabled={isLoading}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>

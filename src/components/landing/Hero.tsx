@@ -1,9 +1,19 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthDialog } from "@/components/auth/AuthDialog";
+import { useAuth } from "@/lib/auth";
+import { useNavigate } from "react-router-dom";
 
 export function Hero() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // If user is already logged in, redirect to dashboard
+  if (user) {
+    navigate("/dashboard");
+    return null;
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[80vh] relative overflow-hidden">

@@ -2,6 +2,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface SignInFormProps {
   onSuccess: () => void;
@@ -9,15 +12,30 @@ interface SignInFormProps {
 
 export default function SignInForm({ onSuccess }: SignInFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const { signIn } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await signIn(email, password);
       onSuccess();
-    }, 1000);
+      navigate("/dashboard");
+    } catch (error) {
+      console.error("Sign in error:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Invalid email or password",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -34,6 +52,8 @@ export default function SignInForm({ onSuccess }: SignInFormProps) {
               autoComplete="email"
               autoCorrect="off"
               disabled={isLoading}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
@@ -43,6 +63,8 @@ export default function SignInForm({ onSuccess }: SignInFormProps) {
               id="password"
               type="password"
               disabled={isLoading}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
