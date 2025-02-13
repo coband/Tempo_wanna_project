@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./components/auth/AuthProvider";
 import { Toaster } from "./components/ui/toaster";
 
+// Import and initialize Tempo Devtools
 import { TempoDevtools } from "tempo-devtools";
 TempoDevtools.init();
 

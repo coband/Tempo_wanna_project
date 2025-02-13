@@ -1,13 +1,23 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
+import { Camera } from "lucide-react";
+import { BarcodeScanner } from "./BarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
@@ -20,6 +30,20 @@ interface BookFormProps {
   onSubmit: (book: NewBook) => Promise<void>;
 }
 
+const LEVELS = ["KiGa", "Unterstufe", "Mittelstufe", "Oberstufe"];
+const SUBJECTS = [
+  "Mathematik",
+  "Deutsch",
+  "NMG",
+  "Englisch",
+  "Französisch",
+  "Bildnerisches Gestalten",
+  "Musik",
+  "Sport",
+  "TTG",
+  "Divers",
+];
+
 export function BookForm({
   book,
   open,
@@ -27,14 +51,17 @@ export function BookForm({
   onSubmit,
 }: BookFormProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
     reset,
+    setValue,
   } = useForm<NewBook>({
     defaultValues: book
       ? { ...book }
@@ -78,23 +105,25 @@ export function BookForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] w-full sm:max-w-[425px] h-[90vh] sm:h-auto overflow-y-auto">
+      <DialogContent className="sm:max-w-[425px] h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {book ? "Buch bearbeiten" : "Buch hinzufügen"}
+          <DialogTitle className="text-xl font-semibold">
+            Buch hinzufügen
           </DialogTitle>
+          <DialogDescription className="text-gray-600">
+            Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen.
+          </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-4">
+
+        <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-4 mt-4">
           <div className="space-y-2">
             <Label htmlFor="title">Titel</Label>
             <Input
               id="title"
               {...register("title", { required: "Titel ist erforderlich" })}
               placeholder="Buchtitel eingeben"
+              className="w-full"
             />
-            {errors.title && (
-              <p className="text-sm text-red-500">{errors.title.message}</p>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -103,73 +132,90 @@ export function BookForm({
               id="author"
               {...register("author", { required: "Autor ist erforderlich" })}
               placeholder="Autor eingeben"
+              className="w-full"
             />
-            {errors.author && (
-              <p className="text-sm text-red-500">{errors.author.message}</p>
-            )}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="isbn">ISBN</Label>
-            <Input
-              id="isbn"
-              {...register("isbn", {
-                required: "ISBN ist erforderlich",
-                pattern: {
-                  value: /^[0-9-]+$/,
-                  message: "ISBN darf nur Zahlen und Bindestriche enthalten",
-                },
-                validate: (value) =>
-                  value.trim().length > 0 || "ISBN darf nicht leer sein",
-              })}
-              placeholder="ISBN eingeben"
-            />
-            {errors.isbn && (
-              <p className="text-sm text-red-500">{errors.isbn.message}</p>
-            )}
+            <div className="flex gap-2">
+              <Input
+                id="isbn"
+                {...register("isbn", { required: "ISBN ist erforderlich" })}
+                placeholder="ISBN eingeben"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setShowScanner(true)}
+              >
+                <Camera className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="subject">Fach</Label>
-            <select
-              id="subject"
-              {...register("subject", { required: "Fach ist erforderlich" })}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Fach auswählen...</option>
-              <option value="Mathematik">Mathematik</option>
-              <option value="Deutsch">Deutsch</option>
-              <option value="Französisch">Französisch</option>
-              <option value="NMG">NMG</option>
-              <option value="Sport">Sport</option>
-              <option value="Musik">Musik</option>
-              <option value="Englisch">Englisch</option>
-              <option value="Bildnerisches Gestalten">
-                Bildnerisches Gestalten
-              </option>
-              <option value="TTG">TTG</option>
-              <option value="Divers">Divers</option>
-            </select>
-            {errors.subject && (
-              <p className="text-sm text-red-500">{errors.subject.message}</p>
-            )}
+            <Controller
+              name="subject"
+              control={control}
+              rules={{ required: "Fach ist erforderlich" }}
+              render={({ field }) => (
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Fach auswählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBJECTS.map((subject) => (
+                      <SelectItem key={subject} value={subject}>
+                        {subject}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="level">Stufe</Label>
-            <select
-              id="level"
-              {...register("level", { required: "Stufe ist erforderlich" })}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Stufe auswählen...</option>
-              <option value="KiGa">KiGa</option>
-              <option value="Unterstufe">Unterstufe</option>
-              <option value="Mittelstufe">Mittelstufe</option>
-            </select>
-            {errors.level && (
-              <p className="text-sm text-red-500">{errors.level.message}</p>
-            )}
+            <Controller
+              name="level"
+              control={control}
+              rules={{ required: "Stufe ist erforderlich" }}
+              render={({ field }) => (
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Stufe auswählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEVELS.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="location">Ort</Label>
+            <Input
+              id="location"
+              {...register("location", { required: "Ort ist erforderlich" })}
+              placeholder="Ort eingeben"
+              className="w-full"
+            />
           </div>
 
           <div className="space-y-2">
@@ -180,53 +226,21 @@ export function BookForm({
               {...register("year", {
                 required: "Erscheinungsjahr ist erforderlich",
                 valueAsNumber: true,
+                min: {
+                  value: 1800,
+                  message: "Jahr muss nach 1800 sein",
+                },
+                max: {
+                  value: new Date().getFullYear(),
+                  message: "Jahr kann nicht in der Zukunft liegen",
+                },
               })}
-              placeholder="Erscheinungsjahr eingeben"
+              placeholder="Jahr eingeben"
+              className="w-full"
             />
-            {errors.year && (
-              <p className="text-sm text-red-500">{errors.year.message}</p>
-            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="location">Standort</Label>
-            <select
-              id="location"
-              {...register("location", {
-                required: "Standort ist erforderlich",
-              })}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Standort auswählen...</option>
-              <option value="Bibliothek">Bibliothek</option>
-              <option value="Lehrerzimmer">Lehrerzimmer</option>
-              <option value="Klassenzimmer">Klassenzimmer</option>
-              <option value="Materialraum">Materialraum</option>
-              <option value="Archiv">Archiv</option>
-            </select>
-            {errors.location && (
-              <p className="text-sm text-red-500">{errors.location.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="available">Verfügbarkeit</Label>
-            <select
-              id="available"
-              {...register("available", {
-                required: "Verfügbarkeit ist erforderlich",
-              })}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="true">Verfügbar</option>
-              <option value="false">Ausgeliehen</option>
-            </select>
-            {errors.available && (
-              <p className="text-sm text-red-500">{errors.available.message}</p>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-6">
             <Button
               type="button"
               variant="outline"
@@ -243,6 +257,18 @@ export function BookForm({
           </div>
         </form>
       </DialogContent>
+
+      <Dialog open={showScanner} onOpenChange={setShowScanner}>
+        {showScanner && (
+          <BarcodeScanner
+            onScan={(isbn) => {
+              setValue("isbn", isbn);
+              setShowScanner(false);
+            }}
+            onClose={() => setShowScanner(false)}
+          />
+        )}
+      </Dialog>
     </Dialog>
   );
 }
