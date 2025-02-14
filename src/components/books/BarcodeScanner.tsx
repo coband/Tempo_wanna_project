@@ -54,7 +54,6 @@ export function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps) {
               console.log("Scanned code:", code);
               if (code.length === 13) {
                 onScan(code);
-                onClose();
               }
             }
             if (error) {

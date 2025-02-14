@@ -22,6 +22,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
 import { useAuth } from "@/lib/auth";
+import { fetchBookInfo } from "@/lib/api";
 
 interface BookFormProps {
   book?: Book;
@@ -45,13 +46,14 @@ const SUBJECTS = [
 ];
 
 export function BookForm({
-  book,
+  book: initialBook,
   open,
   onOpenChange,
   onSubmit,
 }: BookFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [isLoadingBookInfo, setIsLoadingBookInfo] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -63,8 +65,8 @@ export function BookForm({
     reset,
     setValue,
   } = useForm<NewBook>({
-    defaultValues: book
-      ? { ...book }
+    defaultValues: initialBook
+      ? { ...initialBook }
       : {
           title: "",
           author: "",
@@ -83,7 +85,7 @@ export function BookForm({
       await onSubmit({ ...data, user_id: user.id });
       toast({
         title: "Success",
-        description: `Book ${book ? "updated" : "created"} successfully`,
+        description: `Book ${initialBook ? "updated" : "created"} successfully`,
       });
       reset();
       onOpenChange(false);
@@ -92,7 +94,7 @@ export function BookForm({
       const errorMessage =
         error instanceof Error
           ? error.message
-          : `Failed to ${book ? "update" : "create"} book`;
+          : `Failed to ${initialBook ? "update" : "create"} book`;
       toast({
         variant: "destructive",
         title: "Error",
@@ -100,6 +102,37 @@ export function BookForm({
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleScan = async (isbn: string) => {
+    setIsLoadingBookInfo(true);
+    try {
+      const bookInfo = await fetchBookInfo(isbn);
+      setValue("isbn", bookInfo.isbn);
+      setValue("title", bookInfo.title);
+      setValue("author", bookInfo.author);
+      setValue("subject", bookInfo.subject);
+      setValue("level", bookInfo.level);
+      setValue("year", bookInfo.year);
+      setValue("location", bookInfo.location);
+      toast({
+        title: "Buchinformationen geladen",
+        description:
+          "Bitte überprüfen Sie die Daten und passen Sie sie bei Bedarf an.",
+      });
+    } catch (error) {
+      console.error("Error fetching book info:", error);
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description:
+          "Buchinformationen konnten nicht geladen werden. Bitte geben Sie die Informationen manuell ein.",
+      });
+      setValue("isbn", isbn);
+    } finally {
+      setIsLoadingBookInfo(false);
+      setShowScanner(false);
     }
   };
 
@@ -150,10 +183,16 @@ export function BookForm({
                 variant="outline"
                 size="icon"
                 onClick={() => setShowScanner(true)}
+                disabled={isLoadingBookInfo}
               >
                 <Camera className="h-4 w-4" />
               </Button>
             </div>
+            {isLoadingBookInfo && (
+              <div className="text-sm text-muted-foreground">
+                Lade Buchinformationen...
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -252,7 +291,7 @@ export function BookForm({
               {isLoading && (
                 <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
               )}
-              {book ? "Aktualisieren" : "Erstellen"}
+              {initialBook ? "Aktualisieren" : "Erstellen"}
             </Button>
           </div>
         </form>
@@ -261,10 +300,7 @@ export function BookForm({
       <Dialog open={showScanner} onOpenChange={setShowScanner}>
         {showScanner && (
           <BarcodeScanner
-            onScan={(isbn) => {
-              setValue("isbn", isbn);
-              setShowScanner(false);
-            }}
+            onScan={handleScan}
             onClose={() => setShowScanner(false)}
           />
         )}
