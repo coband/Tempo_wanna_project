@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent } from "./ui/card";
-import BookDetails from "./books/BookDetails.jsx";
+import BookDetails from "./books/BookDetails.tsx";
 import { Badge } from "./ui/badge";
 import {
   Tooltip,
@@ -31,7 +31,6 @@ interface BookGridProps {
 
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
-  console.log("BookGrid received books:", books);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -114,7 +113,8 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setSelectedBook(book);
                         setShowEditForm(true);
                       }}
@@ -124,7 +124,8 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setSelectedBook(book);
                         setShowDeleteDialog(true);
                       }}
@@ -139,7 +140,12 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                     <Tooltip>
                       <TooltipTrigger className="w-full">
                         <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Badge>{book.subject}</Badge>
+                          <Badge
+                            variant={book.available ? "default" : "secondary"}
+                          >
+                            {book.available ? "Verfügbar" : "Ausgeliehen"}
+                          </Badge>
+                          <Badge variant="outline">{book.subject}</Badge>
                           <Badge variant="outline">{book.level}</Badge>
                         </div>
                       </TooltipTrigger>
@@ -150,6 +156,12 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                         <p>
                           Status: {book.available ? "Verfügbar" : "Ausgeliehen"}
                         </p>
+                        {!book.available && book.borrowed_at && (
+                          <p>
+                            Ausgeliehen am:{" "}
+                            {new Date(book.borrowed_at).toLocaleDateString()}
+                          </p>
+                        )}
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
