@@ -15,7 +15,7 @@ export async function fetchBookInfo(isbn: string) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
-      credentials: "include",
+
       body: JSON.stringify({ isbn }),
     });
 
@@ -24,9 +24,7 @@ export async function fetchBookInfo(isbn: string) {
     }
 
     const data = await response.json();
-    if (!data) {
-      throw new Error("No data returned from function");
-    }
+    console.log("Raw API Response:", data);
 
     if (!data) {
       throw new Error("No data returned from function");
@@ -41,6 +39,7 @@ export async function fetchBookInfo(isbn: string) {
       year: parseInt(data.Erscheinungsjahr),
       location: "Bibliothek", // Default value
       available: true, // Default value
+      description: data.Beschreibung || "",
     };
   } catch (error) {
     console.error("Error fetching book info:", error);

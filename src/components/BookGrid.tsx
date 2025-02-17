@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent } from "./ui/card";
+import BookDetails from "./books/BookDetails.jsx";
 import { Badge } from "./ui/badge";
 import {
   Tooltip,
@@ -29,11 +30,12 @@ interface BookGridProps {
 }
 
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   console.log("BookGrid received books:", books);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const { toast } = useToast();
 
   const handleAdd = async (book: Omit<Book, "id">) => {
@@ -93,7 +95,15 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {Array.isArray(books) && books.length > 0 ? (
           books.map((book) => (
-            <Card key={book.id} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={book.id}
+              className="hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedBook(book);
+                setShowDetailsDialog(true);
+              }}
+            >
               <CardContent className="p-4">
                 <div className="flex justify-between items-start mb-2">
                   <div>
@@ -180,6 +190,18 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         }}
         onSubmit={handleEdit}
       />
+
+      {selectedBook && (
+        <BookDetails
+          book={selectedBook}
+          open={showDetailsDialog}
+          onOpenChange={(open) => {
+            setShowDetailsDialog(open);
+            if (!open) setSelectedBook(null);
+          }}
+          onBookChange={onBookChange}
+        />
+      )}
 
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>

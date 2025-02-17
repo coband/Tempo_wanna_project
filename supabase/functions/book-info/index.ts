@@ -3,12 +3,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin":
-    "https://musing-galois3-hcdlb.dev-2.tempolabs.ai",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Credentials": "true",
 };
 
 serve(async (req) => {
@@ -45,7 +43,7 @@ serve(async (req) => {
           },
           {
             role: "user",
-            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, Unterstufe, Mittelstufe, Oberstufe), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr'. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
+            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, Unterstufe, Mittelstufe, Oberstufe), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht wekche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
           },
         ],
         max_tokens: 1000,
@@ -98,6 +96,7 @@ serve(async (req) => {
       Stufe: null,
       Fach: null,
       Erscheinungsjahr: null,
+      Beschreibung: null,
     };
 
     bookData = { ...defaultValues, ...bookData };

@@ -64,6 +64,7 @@ export function BookForm({
     formState: { errors },
     reset,
     setValue,
+    getValues,
   } = useForm<NewBook>({
     defaultValues: initialBook
       ? { ...initialBook }
@@ -76,6 +77,7 @@ export function BookForm({
           year: new Date().getFullYear(),
           location: "Bibliothek",
           available: true,
+          description: "",
         },
   });
 
@@ -108,7 +110,9 @@ export function BookForm({
   const handleScan = async (isbn: string) => {
     setIsLoadingBookInfo(true);
     try {
+      console.log("Fetching book info for ISBN:", isbn);
       const bookInfo = await fetchBookInfo(isbn);
+      console.log("Received book info:", bookInfo);
       setValue("isbn", bookInfo.isbn);
       setValue("title", bookInfo.title);
       setValue("author", bookInfo.author);
@@ -116,6 +120,7 @@ export function BookForm({
       setValue("level", bookInfo.level);
       setValue("year", bookInfo.year);
       setValue("location", bookInfo.location);
+      setValue("description", bookInfo.description);
       toast({
         title: "Buchinformationen geladen",
         description:
@@ -187,6 +192,14 @@ export function BookForm({
               >
                 <Camera className="h-4 w-4" />
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleScan(getValues("isbn"))}
+                disabled={isLoadingBookInfo}
+              >
+                Suchen
+              </Button>
             </div>
             {isLoadingBookInfo && (
               <div className="text-sm text-muted-foreground">
@@ -202,10 +215,7 @@ export function BookForm({
               control={control}
               rules={{ required: "Fach ist erforderlich" }}
               render={({ field }) => (
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
+                <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger>
                     <SelectValue placeholder="Fach auswählen" />
                   </SelectTrigger>
@@ -228,10 +238,7 @@ export function BookForm({
               control={control}
               rules={{ required: "Stufe ist erforderlich" }}
               render={({ field }) => (
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
+                <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger>
                     <SelectValue placeholder="Stufe auswählen" />
                   </SelectTrigger>
@@ -244,6 +251,16 @@ export function BookForm({
                   </SelectContent>
                 </Select>
               )}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Beschreibung</Label>
+            <textarea
+              id="description"
+              {...register("description")}
+              placeholder="Beschreibung eingeben"
+              className="w-full min-h-[100px] p-2 border rounded-md"
             />
           </div>
 
