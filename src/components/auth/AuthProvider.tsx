@@ -5,11 +5,13 @@ import { supabase } from "@/lib/supabase";
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      setIsAdmin(session?.user?.user_metadata?.user_role === "admin");
       setLoading(false);
     });
 
@@ -18,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setIsAdmin(session?.user?.user_metadata?.user_role === "admin");
       setLoading(false);
     });
 
@@ -57,7 +60,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{ user, loading, isAdmin, signIn, signUp, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

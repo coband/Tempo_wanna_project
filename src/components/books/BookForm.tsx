@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Camera } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
@@ -57,29 +57,37 @@ export function BookForm({
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    formState: { errors },
-    reset,
-    setValue,
-    getValues,
-  } = useForm<NewBook>({
-    defaultValues: initialBook
-      ? { ...initialBook }
-      : {
-          title: "",
-          author: "",
-          isbn: "",
-          subject: "",
-          level: "",
-          year: new Date().getFullYear(),
-          location: "Bibliothek",
-          available: true,
-          description: "",
-        },
-  });
+  const { register, handleSubmit, control, reset, setValue, getValues } =
+    useForm<NewBook>();
+
+  // Set form values when initialBook changes
+  useEffect(() => {
+    if (initialBook) {
+      reset({
+        title: initialBook.title,
+        author: initialBook.author,
+        isbn: initialBook.isbn,
+        subject: initialBook.subject,
+        level: initialBook.level,
+        year: initialBook.year,
+        location: initialBook.location,
+        available: initialBook.available,
+        description: initialBook.description || "",
+      });
+    } else {
+      reset({
+        title: "",
+        author: "",
+        isbn: "",
+        subject: "",
+        level: "",
+        year: new Date().getFullYear(),
+        location: "Bibliothek",
+        available: true,
+        description: "",
+      });
+    }
+  }, [initialBook, reset]);
 
   const onSubmitForm = async (data: NewBook) => {
     try {
@@ -146,10 +154,12 @@ export function BookForm({
       <DialogContent className="sm:max-w-[425px] h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
-            Buch hinzufügen
+            {initialBook ? "Buch bearbeiten" : "Buch hinzufügen"}
           </DialogTitle>
           <DialogDescription className="text-gray-600">
-            Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen.
+            {initialBook
+              ? "Bearbeiten Sie die Buchinformationen."
+              : "Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen."}
           </DialogDescription>
         </DialogHeader>
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent } from "./ui/card";
+import { useAuth } from "@/lib/auth";
 import BookDetails from "./books/BookDetails.tsx";
 import { Badge } from "./ui/badge";
 import {
@@ -30,6 +31,7 @@ interface BookGridProps {
 }
 
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
+  const { isAdmin } = useAuth();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -85,10 +87,12 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     <div className="bg-white p-6 min-h-screen">
       <div className="mb-6 flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Bücher</h2>
-        <Button onClick={() => setShowAddForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Buch hinzufügen
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setShowAddForm(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Buch hinzufügen
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -109,30 +113,32 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                     <h3 className="font-semibold text-lg">{book.title}</h3>
                     <p className="text-sm text-gray-600">{book.author}</p>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedBook(book);
-                        setShowEditForm(true);
-                      }}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedBook(book);
-                        setShowDeleteDialog(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedBook(book);
+                          setShowEditForm(true);
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedBook(book);
+                          setShowDeleteDialog(true);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
