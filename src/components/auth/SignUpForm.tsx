@@ -15,23 +15,47 @@ export default function SignUpForm({ onSuccess }: SignUpFormProps) {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (password !== confirmPassword) {
+      setPasswordError("Die Passwörter stimmen nicht überein");
+      return;
+    }
+    setPasswordError("");
     event.preventDefault();
     setIsLoading(true);
 
     try {
-      await signUp(email, password);
+      const { user } = await signUp(email, password);
+
+      if (user?.identities?.length === 0) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "An account with this email already exists.",
+        });
+        return;
+      }
+
       toast({
-        title: "Success",
-        description: "Please check your email to confirm your account",
+        title: "Account Created",
+        description:
+          "Please check your email to confirm your account. You will be able to sign in after confirmation.",
       });
       onSuccess();
     } catch (error) {
+      console.error("Sign up error:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Something went wrong. Please try again.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to create account. Please try again.",
       });
     } finally {
       setIsLoading(false);
@@ -58,15 +82,35 @@ export default function SignUpForm({ onSuccess }: SignUpFormProps) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Passwort</Label>
             <Input
               id="password"
               type="password"
               disabled={isLoading}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setPasswordError("");
+              }}
               required
             />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="confirmPassword">Passwort bestätigen</Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              disabled={isLoading}
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                setPasswordError("");
+              }}
+              required
+            />
+            {passwordError && (
+              <p className="text-sm text-red-500 mt-1">{passwordError}</p>
+            )}
           </div>
           <Button disabled={isLoading}>
             {isLoading && (
