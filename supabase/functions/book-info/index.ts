@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL") || "";
+const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,6 +22,36 @@ serve(async (req) => {
   }
 
   try {
+    // JWT Token aus dem Authorization Header extrahieren
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Authorization Header fehlt" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 401,
+        }
+      );
+    }
+
+    // JWT Token extrahieren und Benutzer überprüfen
+    const token = authHeader.replace("Bearer ", "");
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
+
+    if (userError) {
+      console.error("JWT-Validierungsfehler:", userError);
+      return new Response(
+        JSON.stringify({ error: "Ungültiger JWT Token", details: userError.message }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 401,
+        }
+      );
+    }
+
+    console.log("Benutzer erfolgreich authentifiziert:", userData.user.id);
+    
     const { isbn } = await req.json();
     if (!isbn) {
       return new Response(JSON.stringify({ error: "ISBN is required" }), {

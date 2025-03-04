@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { DashboardHeader } from "./DashboardHeader";
 import type { Book } from "@/lib/books";
+import { ChatButton } from "../books/ChatButton";
 
 interface BookManagementProps {
   initialSearchQuery?: string;
@@ -265,6 +266,9 @@ const BookManagement = ({
               onClick={() => setIsFilterSidebarOpen(false)}
             />
           )}
+
+          {/* Chat button */}
+          <ChatButton />
         </div>
       </div>
     </div>
