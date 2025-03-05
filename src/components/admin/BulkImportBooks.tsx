@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 
 // Typ für Buchdaten
 interface BookPreview {
@@ -29,6 +30,10 @@ export default function BulkImportBooks() {
   const [previewMode, setPreviewMode] = useState(false);
   const [bookPreviews, setBookPreviews] = useState<BookPreview[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
+  
+  // Status für die Fortschrittsanzeige
+  const [progressPercentage, setProgressPercentage] = useState(0);
+  const [progressStage, setProgressStage] = useState('');
 
   // Funktion zum Umschalten der Auswahl eines Buchs
   const toggleBookSelection = (isbn: string) => {
@@ -45,6 +50,8 @@ export default function BulkImportBooks() {
   const fetchBookPreviews = async () => {
     setPreviewLoading(true);
     setError('');
+    setProgressStage('Vorschau wird erstellt');
+    setProgressPercentage(0);
     
     try {
       // ISBN-Nummern in ein Array umwandeln (nach Zeilenumbrüchen oder Kommas trennen)
@@ -61,6 +68,16 @@ export default function BulkImportBooks() {
 
       setProgress({ current: 0, total: isbns.length });
       console.log(`Starte Vorschau für ${isbns.length} Bücher`);
+      
+      // Simuliere Fortschritt für den Benutzer
+      let currentProgress = 0;
+      const progressInterval = setInterval(() => {
+        // Langsam bis 95% voranschreiten, die letzten 5% werden nach Abschluss gesetzt
+        if (currentProgress < 95) {
+          currentProgress += (95 - currentProgress) / 10;
+          setProgressPercentage(currentProgress);
+        }
+      }, 500);
       
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
@@ -80,10 +97,16 @@ export default function BulkImportBooks() {
         }
       );
 
+      // Fortschrittsinterval stoppen, wenn Anfrage abgeschlossen ist
+      clearInterval(progressInterval);
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server antwortet mit Statuscode ${response.status}: ${errorText}`);
       }
+
+      // Fortschritt auf 100% setzen, wenn erfolgreich
+      setProgressPercentage(100);
 
       const data = await response.json();
       console.log('Vorschau abgeschlossen:', data);
@@ -118,6 +141,8 @@ export default function BulkImportBooks() {
       setError('Fehler bei der Vorschau: ' + (err.message || err));
     } finally {
       setPreviewLoading(false);
+      // Nach einem kurzen Delay Fortschrittsanzeige zurücksetzen
+      setTimeout(() => setProgressPercentage(0), 1000);
     }
   };
 
@@ -126,6 +151,8 @@ export default function BulkImportBooks() {
     setLoading(true);
     setError('');
     setResults(null);
+    setProgressStage('Bücher werden importiert');
+    setProgressPercentage(0);
     
     try {
       // Nur die ausgewählten ISBN-Nummern extrahieren
@@ -142,8 +169,19 @@ export default function BulkImportBooks() {
       setProgress({ current: 0, total: selectedIsbns.length });
       console.log(`Starte Import von ${selectedIsbns.length} ausgewählten Büchern`);
       
+      // Simuliere Fortschritt für den Benutzer
+      let currentProgress = 0;
+      const progressInterval = setInterval(() => {
+        // Langsam bis 90% voranschreiten - die letzten 10% sind für die Embedding-Erstellung reserviert
+        if (currentProgress < 90) {
+          currentProgress += (90 - currentProgress) / 10;
+          setProgressPercentage(currentProgress);
+        }
+      }, 500);
+      
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
+        clearInterval(progressInterval);
         throw new Error('Keine aktive Sitzung gefunden');
       }
 
@@ -160,10 +198,23 @@ export default function BulkImportBooks() {
         }
       );
 
+      // Fortschrittsinterval stoppen
+      clearInterval(progressInterval);
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server antwortet mit Statuscode ${response.status}: ${errorText}`);
       }
+
+      // Nach erfolgreichem Import Fortschritt auf 95% setzen und Embedding-Phase anzeigen
+      setProgressPercentage(95);
+      setProgressStage('Embeddings werden erstellt...');
+      
+      // Simuliere den letzten Schritt der Embedding-Erstellung
+      setTimeout(() => {
+        setProgressPercentage(100);
+        setProgressStage('Import abgeschlossen');
+      }, 3000);
 
       const data = await response.json();
       setResults(data);
@@ -172,11 +223,20 @@ export default function BulkImportBooks() {
       // Zurück zum Anfangszustand
       setPreviewMode(false);
       setBookPreviews([]);
+      
+      // ISBN-Liste nach erfolgreichem Import leeren
+      setIsbnList('');
+
     } catch (err: any) {
       console.error('Fehler beim Massenimport:', err);
       setError('Fehler beim Import: ' + (err.message || err));
     } finally {
       setLoading(false);
+      // Nach Abschluss und einer Verzögerung Fortschrittsanzeige zurücksetzen
+      setTimeout(() => {
+        setProgressPercentage(0);
+        setProgressStage('');
+      }, 3000);
     }
   };
 
@@ -279,10 +339,18 @@ export default function BulkImportBooks() {
         </Button>
       )}
       
-      {(loading || previewLoading) && progress.total > 0 && (
-        <div className="mt-4">
-          <p>Verarbeite Bücher... Bitte warten.</p>
-          <p>Dies kann einige Minuten dauern bei großen Mengen.</p>
+      {/* Fortschrittsanzeige */}
+      {(loading || previewLoading) && (
+        <div className="mt-6 space-y-2">
+          <div className="flex justify-between items-center">
+            <p className="font-medium">{progressStage}</p>
+            <p className="text-sm">{Math.round(progressPercentage)}%</p>
+          </div>
+          <Progress value={progressPercentage} className="w-full h-2" />
+          <p className="text-sm text-gray-500 mt-1">
+            {loading ? 'Bücher werden importiert und Embeddings erstellt...' : 'Buchvorschauen werden geladen...'}
+            <br />Dies kann einige Minuten dauern, besonders bei größeren Mengen.
+          </p>
         </div>
       )}
       
