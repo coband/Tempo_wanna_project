@@ -59,7 +59,7 @@ serve(async (req) => {
     // Überprüfen, ob der Preview-Modus aktiv ist - strikter Vergleich mit true
     const isPreviewMode = preview === true;
     
-    console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
+    console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}, preview-Parameter:`, preview);
     
     if (!isbn) {
       return new Response(JSON.stringify({ error: "ISBN is required" }), {
@@ -191,12 +191,13 @@ serve(async (req) => {
     
     // Im Vorschaumodus geben wir nur die Buchdaten zurück, ohne in die Datenbank zu schreiben
     if (isPreviewMode) {
-      console.log("Vorschaumodus aktiviert - Kein Datenbankeintrag wird erstellt");
+      console.log("Vorschaumodus aktiviert - Kein Datenbankeintrag wird erstellt. Preview-Parameter:", preview);
+      console.log("Vorschaumodus: Gebe Buchdetails zurück ohne DB-Eintrag:", formattedBookData);
       return new Response(JSON.stringify(formattedBookData), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } else {
-      console.log("Import-Modus aktiviert - Datenbankeintrag wird erstellt");
+      console.log("Import-Modus aktiviert - Datenbankeintrag wird erstellt. Preview-Parameter:", preview);
     }
 
     // Erstelle einen Service-Role-Client für Datenbankoperationen
@@ -209,7 +210,7 @@ serve(async (req) => {
       created_at: new Date().toISOString(),
       available: true, // Standard: verfügbar
       location: 'Schule', // Standardstandort
-      // vector_source wird später gesetzt
+      // vector_source und embedding werden automatisch generiert und nicht hier gesetzt
     };
 
     console.log("Füge Buch in die Datenbank ein:", bookEntry);
@@ -236,54 +237,6 @@ serve(async (req) => {
     }
 
     console.log("Buch erfolgreich in die Datenbank eingefügt:", insertedBook);
-
-    // Nach dem Einfügen den vector_source als separaten Schritt setzen
-    try {
-      if (insertedBook && insertedBook.id) {
-        // Vector-Source für Embedding erstellen
-        const vectorSource = [
-          formattedBookData.title || "Unbekannter Titel",
-          formattedBookData.author ? `Autor: ${formattedBookData.author}` : "",
-          formattedBookData.subject ? `Fach: ${formattedBookData.subject}` : "",
-          formattedBookData.level ? `Stufe: ${formattedBookData.level}` : "",
-          formattedBookData.year ? `Jahr: ${formattedBookData.year}` : "",
-          formattedBookData.description || ""
-        ].filter(Boolean).join(". ");
-        
-        console.log(`Aktualisiere vector_source für Buch ${insertedBook.id}`);
-        
-        const { error: updateError } = await adminClient
-          .from("books")
-          .update({ vector_source: vectorSource })
-          .eq("id", insertedBook.id);
-          
-        if (updateError) {
-          console.error(`Fehler beim Aktualisieren des vector_source:`, updateError);
-        } else {
-          console.log(`vector_source erfolgreich aktualisiert für Buch ${insertedBook.id}`);
-          
-          // Optional: Embedding-Generierung für dieses Buch anstoßen
-          console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
-          
-          // Asynchron die createEmbeddings-Funktion aufrufen
-          fetch(`${SUPABASE_URL}/functions/v1/createEmbeddings`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-            },
-            body: JSON.stringify({
-              bookIds: [insertedBook.id]
-            })
-          }).catch(embedError => {
-            console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
-          });
-        }
-      }
-    } catch (error) {
-      // Fehler beim Update von vector_source oder beim Starten der Embedding-Generierung behandeln
-      console.error("Fehler nach dem Einfügen des Buchs:", error);
-    }
 
     return new Response(JSON.stringify(insertedBook || bookData), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

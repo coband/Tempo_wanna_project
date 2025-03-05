@@ -5,6 +5,7 @@ import BookManagement from "./components/dashboard/BookManagement";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthCallback } from "./components/auth/AuthCallback";
 import { UserManagement } from "./components/admin/UserManagement";
+import BulkImportBooks from "./components/admin/BulkImportBooks";
 import routes from "tempo-routes";
 import { useAuth } from "./lib/auth";
 
@@ -45,6 +46,14 @@ function App() {
           element={
             <AdminRoute>
               <UserManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/bulk-import"
+          element={
+            <AdminRoute>
+              <BulkImportBooks />
             </AdminRoute>
           }
         />

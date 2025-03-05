@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, Users, BookOpen } from "lucide-react";
+import { LogOut, Users, BookOpen, Upload } from "lucide-react";
 
 interface DashboardHeaderProps {
   className?: string;
@@ -44,13 +44,23 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
             </Link>
             
             {isAdmin && (
-              <Link
-                to="/admin/users"
-                className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/users')}`}
-              >
-                <Users className="h-5 w-5 mr-2" />
-                <span>Benutzerverwaltung</span>
-              </Link>
+              <>
+                <Link
+                  to="/admin/users"
+                  className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/users')}`}
+                >
+                  <Users className="h-5 w-5 mr-2" />
+                  <span>Benutzerverwaltung</span>
+                </Link>
+                
+                <Link
+                  to="/admin/bulk-import"
+                  className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/bulk-import')}`}
+                >
+                  <Upload className="h-5 w-5 mr-2" />
+                  <span>Massenimport</span>
+                </Link>
+              </>
             )}
           </nav>
         </div>
