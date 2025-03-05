@@ -1,12 +1,13 @@
 import { createContext, useContext } from "react";
-import type { User } from "@supabase/supabase-js";
+import type { User, Session } from "@supabase/supabase-js";
 
 type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  isSuperAdmin: boolean;
+  signIn: (email: string, password: string) => Promise<{ user: User }>;
+  signUp: (email: string, password: string) => Promise<{ user: User | null; session: Session | null; } | { user: null; session: null; }>;
   signOut: () => Promise<void>;
 };
 

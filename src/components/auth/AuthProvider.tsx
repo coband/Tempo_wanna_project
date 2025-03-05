@@ -1,26 +1,54 @@
 import { useState, useEffect } from "react";
 import { AuthContext } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { jwtDecode } from "jwt-decode";
+
+// JWT-Typ mit benutzerdefinierten Claims definieren
+interface JwtPayload {
+  user_role?: string;
+  [key: string]: any;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
+  // Benutzerrolle aus JWT extrahieren
+  const getUserRoleFromJWT = (accessToken) => {
+    if (!accessToken) return { isAdmin: false, isSuperAdmin: false };
+    try {
+      const jwt = jwtDecode<JwtPayload>(accessToken);
+      const userRole = jwt.user_role;
+      return {
+        isAdmin: userRole === 'admin' || userRole === 'superadmin',
+        isSuperAdmin: userRole === 'superadmin'
+      };
+    } catch (error) {
+      console.error("Fehler beim Dekodieren des JWT:", error);
+      return { isAdmin: false, isSuperAdmin: false };
+    }
+  };
 
   useEffect(() => {
-    // Check active sessions and sets the user
+    // Aktive Sitzungen prüfen und Benutzer festlegen
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      setIsAdmin(session?.user?.user_metadata?.user_role === "admin");
+      const { isAdmin, isSuperAdmin } = getUserRoleFromJWT(session?.access_token);
+      setIsAdmin(isAdmin);
+      setIsSuperAdmin(isSuperAdmin);
       setLoading(false);
     });
 
-    // Listen for changes on auth state (signed in, signed out, etc.)
+    // Auf Änderungen am Auth-Status hören (angemeldet, abgemeldet usw.)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
-      setIsAdmin(session?.user?.user_metadata?.user_role === "admin");
+      const { isAdmin, isSuperAdmin } = getUserRoleFromJWT(session?.access_token);
+      setIsAdmin(isAdmin);
+      setIsSuperAdmin(isSuperAdmin);
       setLoading(false);
     });
 
@@ -34,6 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     if (error) throw error;
     setUser(data.user);
+    const { isAdmin, isSuperAdmin } = getUserRoleFromJWT(data.session?.access_token);
+    setIsAdmin(isAdmin);
+    setIsSuperAdmin(isSuperAdmin);
     return { user: data.user };
   };
 
@@ -41,11 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          user_role: "user",
-        },
-      },
+      // Keine user_role Metadaten mehr, da wir jetzt user_roles Tabelle verwenden
     });
     if (error) throw error;
     return data;
@@ -55,22 +82,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      // Wait for the session to be cleared
+      // Warten, bis die Sitzung gelöscht ist
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         setUser(null);
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
       } else {
-        throw new Error("Session still active");
+        throw new Error("Sitzung immer noch aktiv");
       }
     } catch (error) {
-      console.error("SignOut error:", error);
+      console.error("SignOut-Fehler:", error);
       throw error;
     }
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, isAdmin, signIn, signUp, signOut }}
+      value={{ user, loading, isAdmin, isSuperAdmin, signIn, signUp, signOut }}
     >
       {children}
     </AuthContext.Provider>

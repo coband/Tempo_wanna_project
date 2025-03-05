@@ -4,7 +4,23 @@ import Home from "./components/home";
 import BookManagement from "./components/dashboard/BookManagement";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthCallback } from "./components/auth/AuthCallback";
+import { UserManagement } from "./components/admin/UserManagement";
 import routes from "tempo-routes";
+import { useAuth } from "./lib/auth";
+
+// Komponente für die Prüfung von Admin- und Superadmin-Rechten
+const AdminRoute = ({ children, requireSuperAdmin = false }: { children: React.ReactNode, requireSuperAdmin?: boolean }) => {
+  const { isAdmin, isSuperAdmin } = useAuth();
+  
+  // Prüfen, ob der Benutzer die erforderlichen Rechte hat
+  const hasRequiredPermissions = requireSuperAdmin ? isSuperAdmin : isAdmin;
+  
+  if (!hasRequiredPermissions) {
+    return <div className="p-4">Sie haben keine Berechtigung, diese Seite anzuzeigen.</div>;
+  }
+  
+  return <ProtectedRoute>{children}</ProtectedRoute>;
+};
 
 function App() {
   return (
@@ -21,6 +37,15 @@ function App() {
             <ProtectedRoute>
               <BookManagement />
             </ProtectedRoute>
+          }
+        />
+        {/* Admin-Routen */}
+        <Route
+          path="/admin/users"
+          element={
+            <AdminRoute>
+              <UserManagement />
+            </AdminRoute>
           }
         />
         {/* Add this before any catchall route */}
