@@ -55,10 +55,53 @@ export async function createBook(book: NewBook) {
     isbn: book.isbn.trim(),
   };
 
-  const { error } = await supabase.from("books").insert(cleanedBook);
+  // Insert the book
+  const { data: insertedBook, error } = await supabase
+    .from("books")
+    .insert(cleanedBook)
+    .select()
+    .single();
+
   if (error) {
     console.error("Error creating book:", error);
     throw error;
+  }
+
+  // Starte die Embedding-Generierung für das neue Buch
+  if (insertedBook) {
+    try {
+      // Rufe die createEmbeddings-Funktion auf, wie beim Massenimport
+      const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
+        '';
+      
+      // Holen des API-Schlüssels
+      const { data: authData } = await supabase.auth.getSession();
+      const accessToken = authData.session?.access_token;
+        
+      if (functionsUrl && accessToken) {
+        console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
+        
+        // Asynchron die createEmbeddings-Funktion aufrufen
+        fetch(`${functionsUrl}/createEmbeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({
+            bookIds: [insertedBook.id]
+          })
+        }).catch(embedError => {
+          console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
+        });
+      } else {
+        console.warn("Konnte createEmbeddings nicht aufrufen: URL oder Token fehlt");
+      }
+    } catch (embedError) {
+      console.error("Fehler bei der Embedding-Erstellung:", embedError);
+      // Werfen wir keinen Fehler, da das Buch bereits erstellt wurde
+    }
   }
 }
 
