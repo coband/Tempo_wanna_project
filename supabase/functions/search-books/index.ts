@@ -80,75 +80,66 @@ serve(async (req) => {
       );
     }
 
-    // OpenAI API für Embedding
-    const openAiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
-    if (!openAiKey) {
-      console.error('OpenAI API Key nicht gefunden.');
-      throw new Error('OpenAI API Key nicht konfiguriert');
-    }
-    
-    console.log('OpenAI Key gefunden, Länge:', openAiKey.length);
-    console.log('Erstelle Embedding für:', query);
-    
+    // Supabase-Client initialisieren
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
     try {
-      // OpenAI API aufrufen, um ein Embedding für die Suchanfrage zu erstellen
-      const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${openAiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-3-small',
-          input: query,
-        }),
-      });
+      // VERBESSERUNG 3: Abfrageerweiterung für kurze Anfragen
+      const enhancedQuery = await enhanceQuery(query);
+      console.log('Erweiterte Suchanfrage:', enhancedQuery);
 
-      if (!embeddingResponse.ok) {
-        const errorText = await embeddingResponse.text();
-        console.error('OpenAI API Fehler:', errorText);
-        console.error('Status Code:', embeddingResponse.status);
-        throw new Error(`OpenAI API Fehler: ${embeddingResponse.status} ${errorText}`);
-      }
-
-      const embeddingData = await embeddingResponse.json();
-      console.log('OpenAI Antwort erhalten');
-      
-      if (!embeddingData.data || !embeddingData.data[0] || !embeddingData.data[0].embedding) {
-        console.error('Ungültiges Embedding Format:', JSON.stringify(embeddingData));
-        throw new Error('Ungültiges Embedding Format von OpenAI');
-      }
-      
-      const embedding = embeddingData.data[0].embedding;
+      // OpenAI API für Embedding
+      const embedding = await getEmbedding(enhancedQuery);
       console.log('Embedding erstellt, Länge:', embedding.length);
 
-      // Supabase-Client initialisieren
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      // VERBESSERUNG 2: Anpassung des Schwellenwerts für kurze Anfragen
+      const queryWords = query.split(/\s+/).length;
+      const similarityThreshold = queryWords <= 2 ? 0.4 : 0.5; // Niedrigerer Schwellenwert für kurze Anfragen
+      console.log(`Verwende Ähnlichkeitsschwelle: ${similarityThreshold} (Wortanzahl: ${queryWords})`);
 
       // Die SQL-Funktion match_books verwenden, um ähnliche Bücher zu finden
-      console.log('Suche nach ähnlichen Büchern...');
-      const { data: books, error } = await supabase.rpc(
+      console.log('Suche nach ähnlichen Büchern via Embeddings...');
+      const { data: embeddingBooks, error: embeddingError } = await supabase.rpc(
         'match_books',
         {
           query_embedding: embedding,
-          match_threshold: 0.5, // Ähnlichkeitsschwelle (anpassbar)
-          match_count: 10       // Anzahl der Ergebnisse (anpassbar)
+          match_threshold: similarityThreshold,
+          match_count: 10
         }
       );
 
-      if (error) {
-        console.error('Supabase RPC Fehler:', error);
-        throw new Error(`Supabase Fehler: ${error.message}`);
+      if (embeddingError) {
+        console.error('Supabase RPC Fehler:', embeddingError);
+        throw new Error(`Supabase Fehler: ${embeddingError.message}`);
       }
 
-      console.log(`${books ? books.length : 0} Bücher gefunden`);
+      console.log(`${embeddingBooks ? embeddingBooks.length : 0} Bücher via Embedding gefunden`);
+
+      // VERBESSERUNG 1: Hybrid-Suche mit Keyword-Suche
+      console.log('Führe zusätzlich Keyword-Suche durch...');
+      const { data: keywordBooks, error: keywordError } = await performKeywordSearch(supabase, query);
+      
+      if (keywordError) {
+        console.error('Keyword-Suche Fehler:', keywordError);
+      } else {
+        console.log(`${keywordBooks ? keywordBooks.length : 0} Bücher via Keyword-Suche gefunden`);
+      }
+
+      // Ergebnisse zusammenführen und Duplikate entfernen
+      const mergedBooks = mergeResults(embeddingBooks || [], keywordBooks || [], query);
+      console.log(`Insgesamt ${mergedBooks.length} einzigartige Bücher gefunden`);
 
       // Erfolgreiche Antwort senden
       return new Response(
         JSON.stringify({ 
-          books: books || [],
+          books: mergedBooks,
           debug: { 
-            query,
+            originalQuery: query,
+            enhancedQuery: enhancedQuery,
+            embeddingResults: embeddingBooks ? embeddingBooks.length : 0,
+            keywordResults: keywordBooks ? keywordBooks.length : 0,
+            totalResults: mergedBooks.length,
+            similarityThreshold: similarityThreshold,
             timestamp: new Date().toISOString(),
           }
         }),
@@ -217,4 +208,254 @@ serve(async (req) => {
       }
     );
   }
-}); 
+});
+
+// VERBESSERUNG 3: Abfrageerweiterung für kurze Anfragen
+async function enhanceQuery(query) {
+  const queryWords = query.split(/\s+/).length;
+  
+  if (queryWords <= 2) {
+    // Vordefinierte Erweiterungen für kurze Anfragen
+    const bookRelatedTerms = [
+      "Buch über", 
+      "Literatur zu", 
+      "Informationen zu",
+      "Unterrichtsmaterial zu",
+      "Lehrmaterial für",
+      "Didaktik für"
+    ];
+    
+    // Zufällige Erweiterung auswählen
+    const prefix = bookRelatedTerms[Math.floor(Math.random() * bookRelatedTerms.length)];
+    return `${prefix} ${query}`;
+  }
+  
+  return query;
+}
+
+// OpenAI Embedding abrufen
+async function getEmbedding(query) {
+  const openAiKey = Deno.env.get('OPENAI_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
+  if (!openAiKey) {
+    console.error('OpenAI API Key nicht gefunden.');
+    throw new Error('OpenAI API Key nicht konfiguriert');
+  }
+  
+  console.log('OpenAI Key gefunden, Länge:', openAiKey.length);
+  console.log('Erstelle Embedding für:', query);
+  
+  // OpenAI API aufrufen, um ein Embedding für die Suchanfrage zu erstellen
+  const embeddingResponse = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${openAiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'text-embedding-3-small',
+      input: query,
+    }),
+  });
+
+  if (!embeddingResponse.ok) {
+    const errorText = await embeddingResponse.text();
+    console.error('OpenAI API Fehler:', errorText);
+    console.error('Status Code:', embeddingResponse.status);
+    throw new Error(`OpenAI API Fehler: ${embeddingResponse.status} ${errorText}`);
+  }
+
+  const embeddingData = await embeddingResponse.json();
+  
+  if (!embeddingData.data || !embeddingData.data[0] || !embeddingData.data[0].embedding) {
+    console.error('Ungültiges Embedding Format:', JSON.stringify(embeddingData));
+    throw new Error('Ungültiges Embedding Format von OpenAI');
+  }
+  
+  return embeddingData.data[0].embedding;
+}
+
+// VERBESSERUNG 1: Keyword-Suche implementieren
+async function performKeywordSearch(supabase, query) {
+  // Aufteilen der Anfrage in einzelne Wörter
+  const keywords = query.toLowerCase().split(/\s+/);
+  
+  // Filter für sehr kurze Wörter und Stoppwörter
+  const filteredKeywords = keywords.filter(word => 
+    word.length > 2 && 
+    !['der', 'die', 'das', 'ein', 'eine', 'mit', 'für', 'und', 'oder', 'in', 'im', 'an', 'auf'].includes(word)
+  );
+  
+  if (filteredKeywords.length === 0) {
+    // Wenn keine sinnvollen Keywords übrig bleiben, verwende original
+    return { data: [], error: null };
+  }
+  
+  // Erstelle OR-Bedingungen für jedes Keyword
+  const searchConditions = filteredKeywords.map(keyword => {
+    return `
+      title.ilike.%${keyword}% OR
+      author.ilike.%${keyword}% OR
+      subject.ilike.%${keyword}% OR
+      level.ilike.%${keyword}% OR
+      description.ilike.%${keyword}%
+    `;
+  });
+  
+  // Zusammenführen der Bedingungen mit OR
+  const searchQuery = searchConditions.join(' OR ');
+  
+  // Supabase-Abfrage mit OR-Filter
+  return await supabase
+    .from('books')
+    .select('*')
+    .or(searchQuery)
+    .limit(20);
+}
+
+// Ergebnisse zusammenführen und Duplikate entfernen mit verbessertem Ranking
+function mergeResults(embeddingResults, keywordResults, originalQuery) {
+  // Extrahiere wichtige Schlüsselwörter für die Bewertung
+  const importantKeywords = extractImportantKeywords(originalQuery);
+  console.log('Wichtige Schlüsselwörter für Ranking:', importantKeywords);
+  
+  // Map erstellen für schnellen Zugriff auf Embedding-Ergebnisse
+  const resultsMap = new Map();
+  
+  // Embedding-Ergebnisse zuerst einfügen
+  embeddingResults.forEach(book => {
+    // Bewerte, wie gut das Buch zu den wichtigen Schlüsselwörtern passt
+    const keywordMatchScore = calculateKeywordMatchScore(book, importantKeywords);
+    
+    // Kombinierter Score: Embedding-Ähnlichkeit + Keyword-Match-Score
+    const combinedScore = (book.similarity || 0) + keywordMatchScore;
+    
+    resultsMap.set(book.id, {
+      ...book,
+      original_similarity: book.similarity,
+      keyword_score: keywordMatchScore,
+      similarity: combinedScore // Überschreibe den Similarity-Wert mit dem kombinierten Score
+    });
+  });
+  
+  // Keyword-Ergebnisse hinzufügen
+  keywordResults.forEach(book => {
+    if (resultsMap.has(book.id)) {
+      // Buch bereits in den Ergebnissen, nichts zu tun
+      return;
+    }
+    
+    // Bewerte, wie gut das Buch zu den wichtigen Schlüsselwörtern passt
+    const keywordMatchScore = calculateKeywordMatchScore(book, importantKeywords);
+    
+    // Bei reinen Keyword-Matches ohne Embedding nutzen wir einen Standard-Embedding-Score
+    const baseScore = 0.5; // Mittlerer Basis-Score für Keyword-Matches
+    const combinedScore = baseScore + keywordMatchScore;
+    
+    resultsMap.set(book.id, {
+      ...book,
+      original_similarity: null,
+      keyword_score: keywordMatchScore,
+      similarity: combinedScore
+    });
+  });
+  
+  // In Array umwandeln und nach kombiniertem Score sortieren
+  const mergedResults = Array.from(resultsMap.values());
+  return mergedResults.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+}
+
+// Funktion zum Extrahieren wichtiger Schlüsselwörter aus der Anfrage
+function extractImportantKeywords(query) {
+  // Anfrage in Wörter aufteilen
+  const words = query.toLowerCase().split(/\s+/);
+  
+  // Stoppwörter filtern
+  const stopwords = [
+    'der', 'die', 'das', 'ein', 'eine', 'mit', 'für', 'und', 'oder', 'in', 'im', 'an', 'auf',
+    'ich', 'mir', 'mich', 'du', 'dir', 'dich', 'er', 'sie', 'es', 'wir', 'uns', 'ihr', 'euch',
+    'suche', 'suchen', 'finden', 'gesucht', 'buch', 'bücher', 'lehrmittel', 'material',
+    'wie', 'was', 'wann', 'wo', 'warum', 'welche', 'welches', 'gibt', 'zum', 'zur', 'zu'
+  ];
+  
+  // Fachspezifische Begriffe, die besonders wichtig sind
+  const educationKeywords = [
+    'mathe', 'mathematik', 'deutsch', 'englisch', 'französisch', 'biologie', 'chemie', 'physik',
+    'geschichte', 'geographie', 'musik', 'kunst', 'sport', 'informatik', 'sachunterricht',
+    'grundschule', 'sekundarstufe', 'gymnasium', 'realschule', 'hauptschule', 'berufsschule',
+    'kindergarten', 'vorschule', 'oberstufe', 'primarstufe', 'didaktik', 'pädagogik',
+    'unterricht', 'lehren', 'lernen', 'differenzierung', 'inklusion', 'förderung',
+    'arbeitsblatt', 'curriculum', 'lehrplan', 'kompetenz', 'bildungsstandard',
+    'prüfung', 'test', 'klassenarbeit', 'klausur', 'bewertung', 'leistung',
+    'fachdidaktik', 'methodik', 'lernmethode', 'unterrichtsmethode'
+  ];
+  
+  // Wichtige Schlüsselwörter extrahieren
+  const keywords = words.filter(word => 
+    word.length > 2 && 
+    !stopwords.includes(word)
+  );
+  
+  // Gewichtung für jedes Keyword
+  return keywords.map(keyword => {
+    // Höhere Gewichtung für bildungsspezifische Begriffe
+    const isEducationTerm = educationKeywords.some(eduTerm => 
+      keyword.includes(eduTerm) || eduTerm.includes(keyword)
+    );
+    
+    return {
+      word: keyword,
+      weight: isEducationTerm ? 2.0 : 1.0 // Doppelte Gewichtung für Bildungsbegriffe
+    };
+  });
+}
+
+// Funktion zur Berechnung eines Keyword-Match-Scores
+function calculateKeywordMatchScore(book, keywords) {
+  if (!book || !keywords || keywords.length === 0) {
+    return 0;
+  }
+  
+  // Sammle alle relevanten Textfelder des Buches
+  const bookText = [
+    book.title || '',
+    book.author || '',
+    book.subject || '',
+    book.level || '',
+    book.description || ''
+  ].join(' ').toLowerCase();
+  
+  // Berechne Score basierend auf dem Vorkommen der Schlüsselwörter
+  let totalScore = 0;
+  let totalWeight = 0;
+  
+  keywords.forEach(({ word, weight }) => {
+    totalWeight += weight;
+    
+    // Exakte Wortübereinstimmung prüfen (mit Wortgrenzen)
+    const exactRegex = new RegExp(`\\b${word}\\b`, 'i');
+    if (exactRegex.test(bookText)) {
+      // Exakte Übereinstimmung ist am wertvollsten
+      totalScore += weight * 0.4;
+    }
+    // Teilwortübereinstimmung prüfen
+    else if (bookText.includes(word)) {
+      totalScore += weight * 0.2;
+    }
+    
+    // Zusätzliche Gewichtung für Vorkommen im Titel (besonders wichtig)
+    if (book.title && book.title.toLowerCase().includes(word)) {
+      totalScore += weight * 0.3;
+    }
+    
+    // Noch mehr Gewichtung, wenn das Schlüsselwort im Fach vorkommt
+    if (book.subject && book.subject.toLowerCase().includes(word)) {
+      totalScore += weight * 0.2;
+    }
+  });
+  
+  // Normalisiere den Score
+  const normalizedScore = totalWeight > 0 ? totalScore / totalWeight : 0;
+  
+  // Skaliere auf einen Wert zwischen 0 und 0.5 (als Ergänzung zum Embedding-Score)
+  return normalizedScore * 0.5;
+} 
