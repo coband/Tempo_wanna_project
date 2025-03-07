@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Skeleton } from '../ui/skeleton';
-import { Send, Book as BookIcon, User, X, Eye } from 'lucide-react';
+import { Send, Book as BookIcon, User, X, Eye, Clock, ChevronDown } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { ScrollArea } from "../ui/scroll-area";
 import BookDetails from "./BookDetails";
@@ -20,6 +20,11 @@ import {
   DialogFooter,
   DialogClose,
 } from "../ui/dialog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../ui/collapsible";
 
 // Interface für Suchergebnisse, die von der Supabase-Funktion zurückgegeben werden
 interface SearchBook {
@@ -38,19 +43,70 @@ interface Message {
   timestamp: Date;
 }
 
+interface ChatSession {
+  id: string;
+  messages: Message[];
+  timestamp: Date;
+  books: SearchBook[];
+  showBooks: boolean;
+}
+
 interface BookChatProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+// Hilfsfunktionen für localStorage
+const storageChatKey = 'book_chat_history';
+
+const saveChatHistory = (sessions: ChatSession[]) => {
+  try {
+    // ISO Strings für Datumsangaben verwenden
+    const sessionsToSave = sessions.map(session => ({
+      ...session,
+      timestamp: session.timestamp.toISOString(),
+      messages: session.messages.map(msg => ({
+        ...msg,
+        timestamp: msg.timestamp.toISOString()
+      }))
+    }));
+    localStorage.setItem(storageChatKey, JSON.stringify(sessionsToSave));
+  } catch (error) {
+    console.error('Fehler beim Speichern des Chat-Verlaufs:', error);
+  }
+};
+
+const loadChatHistory = (): ChatSession[] => {
+  try {
+    const saved = localStorage.getItem(storageChatKey);
+    if (!saved) return [];
+    
+    // Parse und konvertiere ISO Strings zurück zu Date-Objekten
+    const sessions = JSON.parse(saved);
+    return sessions.map((session: any) => ({
+      ...session,
+      timestamp: new Date(session.timestamp),
+      messages: session.messages.map((msg: any) => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      })),
+      showBooks: false // Standardmäßig Bücher ausblenden
+    }));
+  } catch (error) {
+    console.error('Fehler beim Laden des Chat-Verlaufs:', error);
+    return [];
+  }
+};
+
 export function BookChat({ open, onOpenChange }: BookChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      type: 'assistant',
-      content: 'Hallo! Wie kann ich dir bei der Suche nach einem Buch helfen? Du kannst mir sagen, wonach du suchst, zum Beispiel "Ich brauche ein Buch über Mathematik für die Oberstufe" oder "Hast du etwas zur Graphomotorik?"',
-      timestamp: new Date(),
-    },
-  ]);
+  // Standardnachricht für den Assistenten
+  const defaultMessage = {
+    type: 'assistant' as const,
+    content: 'Hallo! Wie kann ich dir bei der Suche nach einem Buch helfen? Du kannst mir sagen, wonach du suchst, zum Beispiel "Ich brauche ein Buch über Mathematik für die Oberstufe" oder "Hast du etwas zur Graphomotorik?"',
+    timestamp: new Date(),
+  };
+
+  const [messages, setMessages] = useState<Message[]>([defaultMessage]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [books, setBooks] = useState<SearchBook[]>([]);
@@ -58,33 +114,153 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [isLoadingBookDetails, setIsLoadingBookDetails] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string>('');
+  const [allMessages, setAllMessages] = useState<Message[]>([]);
   const { toast } = useToast();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
+  // Chat-Historie beim Komponenten-Laden abrufen
+  useEffect(() => {
+    const history = loadChatHistory();
+    setChatHistory(history);
+  }, []);
+
+  // Alle Nachrichten aus dem Verlauf zusammenführen
+  useEffect(() => {
+    // Erstelle ein kombiniertes Array mit allen Nachrichten aus der Historie und aktuellen Nachrichten
+    let combinedMessages: Message[] = [...messages];
+    
+    // Füge Nachrichten aus früheren Sitzungen hinzu
+    if (chatHistory.length > 0) {
+      // Sortiere die Sitzungen nach Datum (neueste zuerst)
+      const sortedHistory = [...chatHistory].sort((a, b) => 
+        b.timestamp.getTime() - a.timestamp.getTime()
+      );
+      
+      // Füge eine Trennnachricht zwischen den Sitzungen ein, wenn aktuelle Sitzung Nachrichten hat
+      if (messages.length > 1) {
+        combinedMessages.push({
+          type: 'assistant',
+          content: '------- Frühere Gespräche -------',
+          timestamp: new Date(),
+        });
+      }
+      
+      // Füge alle Nachrichten der Sitzungen hinzu
+      sortedHistory.forEach((session, sessionIndex) => {
+        // Trennlinie zwischen den Sessions
+        if (sessionIndex > 0) {
+          combinedMessages.push({
+            type: 'assistant',
+            content: '------- Früheres Gespräch -------',
+            timestamp: new Date(),
+          });
+        }
+        
+        combinedMessages = [
+          ...combinedMessages,
+          ...session.messages
+        ];
+      });
+    }
+    
+    setAllMessages(combinedMessages);
+  }, [messages, chatHistory]);
+
+  // Neue Sitzung erstellen oder bestehende verwenden, wenn der Dialog geöffnet wird
   useEffect(() => {
     if (open) {
-      // Reset state when dialog opens
-      scrollToBottom();
+      // Wenn keine aktive Sitzung vorhanden ist, erstelle eine neue
+      if (!currentSessionId) {
+        const newSessionId = `session_${Date.now()}`;
+        setCurrentSessionId(newSessionId);
+        setMessages([defaultMessage]);
+        setInputValue('');
+        setBooks([]);
+        setShowResults(false);
+      }
+      
+      // Scroll zum Ende (neue Nachrichteneingabe)
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    }
+  }, [open]);
+
+  // Chat-Historie aktualisieren, wenn sich Nachrichten oder Bücher ändern
+  useEffect(() => {
+    if (currentSessionId && messages.length > 1) {
+      const updatedHistory = [...chatHistory];
+      const existingSessionIndex = updatedHistory.findIndex(
+        session => session.id === currentSessionId
+      );
+
+      if (existingSessionIndex >= 0) {
+        // Bestehende Sitzung aktualisieren
+        updatedHistory[existingSessionIndex] = {
+          ...updatedHistory[existingSessionIndex],
+          messages,
+          books,
+          timestamp: new Date(),
+          showBooks: showResults
+        };
+      } else {
+        // Neue Sitzung hinzufügen
+        updatedHistory.push({
+          id: currentSessionId,
+          messages,
+          books,
+          timestamp: new Date(),
+          showBooks: showResults
+        });
+
+        // Begrenze die Anzahl der gespeicherten Sitzungen auf 10
+        if (updatedHistory.length > 10) {
+          updatedHistory.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+          updatedHistory.splice(10);
+        }
+      }
+
+      setChatHistory(updatedHistory);
+      saveChatHistory(updatedHistory);
+    }
+  }, [messages, books, showResults]);
+
+  // Scroll zum Ende, wenn neue Nachrichten hinzugefügt werden
+  useEffect(() => {
+    if (open && messages.length > 0) {
+      // Kurze Verzögerung für das Scrollen, damit das Rendering abgeschlossen ist
+      setTimeout(() => {
+        scrollToBottom();
+      }, 50);
     }
   }, [messages, open]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const handleSearch = async () => {
     if (!inputValue.trim()) return;
 
+    // Temporäres Input speichern und sofort zurücksetzen
+    const currentInput = inputValue.trim();
+    setInputValue('');
+
     // Benutzer-Nachricht hinzufügen
     const userMessage: Message = {
       type: 'user',
-      content: inputValue,
+      content: currentInput,
       timestamp: new Date(),
     };
     
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+    // Sofort die Benutzernachricht anzeigen
+    setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setShowResults(false);
 
@@ -221,6 +397,128 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
     }
   };
 
+  // Prüft, ob ein nachricht eine Separatorlinie ist
+  const isSeparatorMessage = (message: Message) => {
+    return message.type === 'assistant' && (
+      message.content === '------- Frühere Gespräche -------' ||
+      message.content === '------- Früheres Gespräch -------'
+    );
+  };
+
+  const renderMessages = () => {
+    // Kombinierte Nachrichten: frühere Sitzungen + aktuelle Sitzung
+    let allMessages: React.ReactNode[] = [];
+    
+    // Frühere Nachrichten hinzufügen (älteste zuerst)
+    const historicalMessages = chatHistory
+      .filter(session => session.id !== currentSessionId) // Aktuelle Sitzung ausschließen
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()) // Älteste zuerst
+      .flatMap((session, sessionIndex, array) => {
+        const sessionMessages = session.messages.map((message, msgIndex) => (
+          <div key={`history-${session.id}-${msgIndex}`}
+            className={`flex ${
+              message.type === 'user' ? 'justify-end' : 'justify-start'
+            }`}
+          >
+            <div
+              className={`flex max-w-[80%] ${
+                message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
+              }`}
+            >
+              <div className={`flex-shrink-0 ${message.type === 'user' ? 'ml-3' : 'mr-3'}`}>
+                <Avatar>
+                  <AvatarFallback>
+                    {message.type === 'user' ? <User size={18} /> : <BookIcon size={18} />}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+              <div
+                className={`p-3 rounded-lg ${
+                  message.type === 'user'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted'
+                }`}
+              >
+                <p className="whitespace-normal break-words">{message.content}</p>
+                <p className="text-xs opacity-70 mt-1">
+                  {message.timestamp.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            </div>
+          </div>
+        ));
+        
+        // Trennlinie nach jeder Sitzung hinzufügen (außer nach der letzten)
+        if (sessionIndex < array.length - 1) {
+          sessionMessages.push(
+            <div key={`separator-${session.id}`} className="flex justify-center my-6">
+              <div className="bg-muted px-3 py-1 rounded-md text-xs text-muted-foreground">
+                ------- Früheres Gespräch -------
+              </div>
+            </div>
+          );
+        }
+        
+        return sessionMessages;
+      });
+    
+    allMessages = [...historicalMessages];
+    
+    // Trennlinie hinzufügen, wenn es frühere Chats gibt und die aktuelle Sitzung Nachrichten hat
+    if (chatHistory.filter(session => session.id !== currentSessionId).length > 0 && messages.length > 1) {
+      allMessages.push(
+        <div key="current-separator" className="flex justify-center my-6">
+          <div className="bg-muted px-3 py-1 rounded-md text-xs text-muted-foreground">
+            ------- Aktuelles Gespräch -------
+          </div>
+        </div>
+      );
+    }
+    
+    // Aktuelle Nachrichten hinzufügen (als letztes/unten)
+    const currentMessages = messages.map((message, index) => (
+      <div key={`current-${index}`}
+        className={`flex ${
+          message.type === 'user' ? 'justify-end' : 'justify-start'
+        }`}
+      >
+        <div
+          className={`flex max-w-[80%] ${
+            message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
+          }`}
+        >
+          <div className={`flex-shrink-0 ${message.type === 'user' ? 'ml-3' : 'mr-3'}`}>
+            <Avatar>
+              <AvatarFallback>
+                {message.type === 'user' ? <User size={18} /> : <BookIcon size={18} />}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <div
+            className={`p-3 rounded-lg ${
+              message.type === 'user'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted'
+            }`}
+          >
+            <p className="whitespace-normal break-words">{message.content}</p>
+            <p className="text-xs opacity-70 mt-1">
+              {message.timestamp.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </p>
+          </div>
+        </div>
+      </div>
+    ));
+    
+    return [...allMessages, ...currentMessages];
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -232,54 +530,18 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-hidden flex flex-col h-[500px]">
-            <ScrollArea className="flex-1 pr-4 mb-4">
-              <div className="space-y-4">
-                {messages.map((message, index) => (
-                  <div
-                    key={index}
-                    className={`flex ${
-                      message.type === 'user' ? 'justify-end' : 'justify-start'
-                    }`}
-                  >
-                    <div
-                      className={`flex max-w-[80%] ${
-                        message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
-                      }`}
-                    >
-                      <div className={`flex-shrink-0 ${message.type === 'user' ? 'ml-3' : 'mr-3'}`}>
-                        <Avatar>
-                          <AvatarFallback>
-                            {message.type === 'user' ? <User size={18} /> : <BookIcon size={18} />}
-                          </AvatarFallback>
-                        </Avatar>
-                      </div>
-                      <div
-                        className={`p-3 rounded-lg ${
-                          message.type === 'user'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted'
-                        }`}
-                      >
-                        <p>{message.content}</p>
-                        <p className="text-xs opacity-70 mt-1">
-                          {message.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
+          <div className="flex-1 overflow-hidden flex flex-col h-[60vh]">
+            <ScrollArea className="flex-1 pr-4 mb-4 max-h-full overflow-y-auto" ref={scrollAreaRef}>
+              <div className="space-y-4 pb-2">
+                {renderMessages()}
+                <div ref={messagesEndRef} className="h-1" />
               </div>
             </ScrollArea>
 
             {showResults && (
-              <div className="mb-4">
+              <div className="mb-4 mt-2 border-t pt-4">
                 <h3 className="text-lg font-medium mb-3">Gefundene Bücher:</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[200px] overflow-y-auto pr-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[30vh] overflow-y-auto pr-2">
                   {books.map((book) => (
                     <Card key={book.id} className="overflow-hidden">
                       <CardContent className="p-4">
