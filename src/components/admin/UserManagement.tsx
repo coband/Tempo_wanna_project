@@ -9,15 +9,67 @@ import {
   checkIsSuperAdmin
 } from '@/lib/user-management';
 import { supabase } from '@/lib/supabase';
+import { 
+  UserCircle2, 
+  Shield, 
+  ShieldAlert, 
+  Calendar, 
+  Clock, 
+  Lock, 
+  Unlock, 
+  RotateCcw, 
+  CheckCircle, 
+  XCircle,
+  SearchIcon,
+  SlidersHorizontal,
+  RefreshCw
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export function UserManagement() {
   const { user, isAdmin, isSuperAdmin } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [actionInProgress, setActionInProgress] = useState<Record<string, boolean>>({});
   const [isSuperAdminFromCheck, setIsSuperAdminFromCheck] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showBlockedOnly, setShowBlockedOnly] = useState(false);
+  const [showAdminsOnly, setShowAdminsOnly] = useState(false);
+  const [userToAction, setUserToAction] = useState<User | null>(null);
+  const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -29,6 +81,7 @@ export function UserManagement() {
         const users = await listUsers();
         console.log("Benutzer empfangen:", users);
         setUsers(users);
+        setFilteredUsers(users);
         
         console.log("Superadmin-Check wird durchgeführt...");
         const isSuperAdminCheck = await checkIsSuperAdmin();
@@ -44,6 +97,33 @@ export function UserManagement() {
 
     fetchData();
   }, [user]);
+
+  // Filter users whenever search or filter criteria change
+  useEffect(() => {
+    let result = [...users];
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(user => 
+        user.email.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply blocked filter
+    if (showBlockedOnly) {
+      result = result.filter(user => user.is_blocked);
+    }
+    
+    // Apply admin filter
+    if (showAdminsOnly) {
+      result = result.filter(user => 
+        user.roles.includes('admin') || user.roles.includes('superadmin')
+      );
+    }
+    
+    setFilteredUsers(result);
+  }, [users, searchQuery, showBlockedOnly, showAdminsOnly]);
 
   const handleToggleAdmin = async (userId: string) => {
     if (actionInProgress[userId]) return;
@@ -111,16 +191,15 @@ export function UserManagement() {
     }
   };
 
-  const handleToggleBlock = async (userId: string) => {
+  const handleToggleBlock = async (userId: string, reason?: string) => {
     if (!isSuperAdmin || actionInProgress[userId]) return;
     
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
-      const userToToggle = users.find(u => u.id === userId);
-      const reason = !userToToggle?.is_blocked ? blockReason : undefined;
       
       await toggleUserBlock(userId, reason);
       setBlockReason('');
+      setIsBlockDialogOpen(false);
       
       // Benutzerliste aktualisieren
       const updatedUsers = await listUsers();
@@ -138,6 +217,7 @@ export function UserManagement() {
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
       await resetUserPassword(email);
+      setIsResetDialogOpen(false);
       alert(`Ein Passwort-Reset-Link wurde an ${email} gesendet.`);
     } catch (err) {
       setError(err.message || 'Fehler beim Zurücksetzen des Passworts');
@@ -145,139 +225,341 @@ export function UserManagement() {
       setActionInProgress(prev => ({ ...prev, [userId]: false }));
     }
   };
+  
+  const refreshUsers = async () => {
+    setLoading(true);
+    try {
+      const updatedUsers = await listUsers();
+      setUsers(updatedUsers);
+    } catch (err) {
+      setError(err.message || 'Fehler beim Aktualisieren der Benutzerdaten');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (loading) return <div className="p-4">Laden...</div>;
-  if (error) return <div className="p-4 text-red-500">Fehler: {error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center">
+          <div className="h-12 w-12 rounded-full border-4 border-t-blue-500 border-b-gray-200 border-l-gray-200 border-r-gray-200 animate-spin"></div>
+          <p className="mt-4 text-gray-600">Benutzer werden geladen...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <Card className="max-w-4xl mx-auto my-8 bg-red-50 border-red-200">
+        <CardHeader>
+          <CardTitle className="text-red-800">Fehler beim Laden der Benutzerdaten</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-red-700">{error}</p>
+        </CardContent>
+        <CardFooter>
+          <Button variant="outline" onClick={refreshUsers}>
+            <RefreshCw className="h-4 w-4 mr-2" /> Erneut versuchen
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  }
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Benutzerverwaltung</h1>
-      
-      {users.length === 0 ? (
-        <p>Keine Benutzer gefunden.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white border border-gray-200">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="px-4 py-2 text-left">E-Mail</th>
-                <th className="px-4 py-2 text-left">Erstellt am</th>
-                <th className="px-4 py-2 text-left">Letzte Anmeldung</th>
-                <th className="px-4 py-2 text-left">Rollen</th>
-                <th className="px-4 py-2 text-left">Status</th>
-                <th className="px-4 py-2 text-left">Aktionen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((userItem) => (
-                <tr key={userItem.id} className={userItem.is_blocked ? "bg-red-50" : ""}>
-                  <td className="px-4 py-2">{userItem.email}</td>
-                  <td className="px-4 py-2">{new Date(userItem.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-2">
-                    {userItem.last_sign_in_at 
-                      ? new Date(userItem.last_sign_in_at).toLocaleString() 
-                      : 'Nie'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {userItem.roles.map(role => (
-                        <span 
-                          key={role} 
-                          className={`px-2 py-1 rounded text-xs ${
-                            role === 'superadmin' 
-                              ? 'bg-purple-100 text-purple-800' 
-                              : role === 'admin' 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-gray-100'
-                          }`}
-                        >
-                          {role}
-                        </span>
-                      ))}
-                      {!userItem.roles.length && <span className="text-gray-400">Keine</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2">
-                    {userItem.is_blocked ? (
-                      <span className="text-red-600 font-medium">
-                        Gesperrt {userItem.block_reason && `(${userItem.block_reason})`}
-                      </span>
-                    ) : (
-                      <span className="text-green-600 font-medium">Aktiv</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2">
-                    <div className="flex flex-col gap-2">
-                      <button
-                        onClick={() => handleToggleAdmin(userItem.id)}
-                        className={`px-3 py-1 text-sm rounded ${
-                          userItem.roles.includes('admin')
-                            ? 'bg-blue-500 text-white hover:bg-blue-600'
-                            : 'bg-gray-200 hover:bg-gray-300'
-                        }`}
-                        disabled={actionInProgress[userItem.id]}
-                      >
-                        {userItem.roles.includes('admin') ? 'Admin entfernen' : 'Als Admin festlegen'}
-                      </button>
-                      
-                      {isSuperAdmin && (
-                        <>
-                          <button
-                            onClick={() => handleToggleSuperAdmin(userItem.id)}
-                            className={`px-3 py-1 text-sm rounded ${
-                              userItem.roles.includes('superadmin')
-                                ? 'bg-purple-500 text-white hover:bg-purple-600'
-                                : 'bg-gray-200 hover:bg-gray-300'
-                            }`}
-                            disabled={actionInProgress[userItem.id]}
-                          >
-                            {userItem.roles.includes('superadmin') ? 'SuperAdmin entfernen' : 'Als SuperAdmin festlegen'}
-                          </button>
-                          
-                          {!userItem.is_blocked ? (
-                            <div className="flex gap-1">
-                              <input
-                                type="text"
-                                placeholder="Grund"
-                                className="px-2 py-1 text-sm border rounded flex-grow"
-                                value={blockReason}
-                                onChange={(e) => setBlockReason(e.target.value)}
-                              />
-                              <button
-                                onClick={() => handleToggleBlock(userItem.id)}
-                                className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600"
-                                disabled={actionInProgress[userItem.id]}
-                              >
-                                Sperren
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => handleToggleBlock(userItem.id)}
-                              className="px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600"
-                              disabled={actionInProgress[userItem.id]}
-                            >
-                              Entsperren
-                            </button>
-                          )}
-                          
-                          <button
-                            onClick={() => handleResetPassword(userItem.email, userItem.id)}
-                            className="px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                            disabled={actionInProgress[userItem.id]}
-                          >
-                            Passwort zurücksetzen
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="container py-6 px-4 max-w-6xl mx-auto">
+      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+          <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">
+            <UserCircle2 className="inline-block mr-2 h-6 w-6 text-blue-600" />
+            Benutzerverwaltung
+          </h1>
+          
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                type="text"
+                placeholder="Benutzer suchen..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 w-full md:w-64"
+              />
+            </div>
+            
+            <Button 
+              variant="outline" 
+              onClick={refreshUsers}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className="h-4 w-4" /> Aktualisieren
+            </Button>
+          </div>
         </div>
-      )}
+        
+        <div className="mb-6">
+          <Tabs defaultValue="all" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="all">Alle Benutzer</TabsTrigger>
+              <TabsTrigger value="admins" onClick={() => setShowAdminsOnly(!showAdminsOnly)}>
+                Administratoren
+              </TabsTrigger>
+              <TabsTrigger value="blocked" onClick={() => setShowBlockedOnly(!showBlockedOnly)}>
+                Gesperrte Benutzer
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          
+          <div className="flex items-center justify-between mb-2 text-sm text-gray-500">
+            <span>{filteredUsers.length} Benutzer gefunden</span>
+            <div className="flex gap-4">
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={showAdminsOnly} 
+                  onChange={() => setShowAdminsOnly(!showAdminsOnly)}
+                  className="mr-2"
+                />
+                Nur Administratoren
+              </label>
+              <label className="flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={showBlockedOnly} 
+                  onChange={() => setShowBlockedOnly(!showBlockedOnly)}
+                  className="mr-2"
+                />
+                Nur gesperrte Benutzer
+              </label>
+            </div>
+          </div>
+        </div>
+      
+        {filteredUsers.length === 0 ? (
+          <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
+            <UserCircle2 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+            <h3 className="text-lg font-medium text-gray-800">Keine Benutzer gefunden</h3>
+            <p className="text-gray-500 mt-1">
+              {searchQuery ? `Es wurden keine Benutzer gefunden, die zu "${searchQuery}" passen.` : 
+                "Es wurden keine Benutzer gefunden, die zu den ausgewählten Filtern passen."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+            {filteredUsers.map((userItem) => (
+              <Card 
+                key={userItem.id} 
+                className={`overflow-hidden ${userItem.is_blocked ? "border-red-300 bg-red-50" : ""}`}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-medium">{userItem.email}</CardTitle>
+                      <CardDescription>
+                        <div className="flex items-center text-xs text-gray-500 mt-1">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          <span>Erstellt: {new Date(userItem.created_at).toLocaleDateString()}</span>
+                          <Separator orientation="vertical" className="mx-2 h-3" />
+                          <Clock className="h-3 w-3 mr-1" />
+                          <span>
+                            {userItem.last_sign_in_at 
+                              ? `Letzte Anmeldung: ${new Date(userItem.last_sign_in_at).toLocaleDateString()}`
+                              : 'Nie angemeldet'}
+                          </span>
+                        </div>
+                      </CardDescription>
+                    </div>
+                    
+                    <div className="flex gap-1">
+                      {userItem.roles.map(role => (
+                        <Badge 
+                          key={role}
+                          variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
+                        >
+                          {role === 'superadmin' ? (
+                            <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
+                          ) : role === 'admin' ? (
+                            <><Shield className="h-3 w-3 mr-1" /> Admin</>
+                          ) : (
+                            role
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="pb-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge 
+                      variant={userItem.is_blocked ? "destructive" : "default"}
+                      className={`rounded-full px-3 ${!userItem.is_blocked ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}`}
+                    >
+                      {userItem.is_blocked ? (
+                        <><Lock className="h-3 w-3 mr-1" /> Gesperrt</>
+                      ) : (
+                        <><Unlock className="h-3 w-3 mr-1" /> Aktiv</>
+                      )}
+                    </Badge>
+                    
+                    {userItem.is_blocked && userItem.block_reason && (
+                      <span className="text-red-600 text-xs">
+                        Grund: {userItem.block_reason}
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+                
+                <CardFooter className="pt-3 flex flex-wrap justify-end gap-2 border-t">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant={userItem.roles.includes('admin') ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handleToggleAdmin(userItem.id)}
+                          disabled={actionInProgress[userItem.id]}
+                        >
+                          {userItem.roles.includes('admin') ? (
+                            <><XCircle className="h-3.5 w-3.5 mr-1" /> Admin entfernen</>
+                          ) : (
+                            <><CheckCircle className="h-3.5 w-3.5 mr-1" /> Als Admin festlegen</>
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>{userItem.roles.includes('admin') ? 'Admin-Berechtigungen entfernen' : 'Admin-Berechtigungen gewähren'}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  
+                  {isSuperAdmin && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <SlidersHorizontal className="h-3.5 w-3.5 mr-1" /> Erweiterte Aktionen
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>SuperAdmin Aktionen</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        
+                        <DropdownMenuItem
+                          onClick={() => handleToggleSuperAdmin(userItem.id)}
+                          disabled={actionInProgress[userItem.id]}
+                          className={userItem.roles.includes('superadmin') ? "text-red-600" : ""}
+                        >
+                          {userItem.roles.includes('superadmin') ? (
+                            <><ShieldAlert className="h-3.5 w-3.5 mr-2" /> SuperAdmin entfernen</>
+                          ) : (
+                            <><ShieldAlert className="h-3.5 w-3.5 mr-2" /> Als SuperAdmin festlegen</>
+                          )}
+                        </DropdownMenuItem>
+                        
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setUserToAction(userItem);
+                            setIsBlockDialogOpen(true);
+                          }}
+                          disabled={actionInProgress[userItem.id]}
+                          className={userItem.is_blocked ? "text-green-600" : "text-red-600"}
+                        >
+                          {userItem.is_blocked ? (
+                            <><Unlock className="h-3.5 w-3.5 mr-2" /> Benutzer entsperren</>
+                          ) : (
+                            <><Lock className="h-3.5 w-3.5 mr-2" /> Benutzer sperren</>
+                          )}
+                        </DropdownMenuItem>
+                        
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setUserToAction(userItem);
+                            setIsResetDialogOpen(true);
+                          }}
+                          disabled={actionInProgress[userItem.id]}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5 mr-2" /> Passwort zurücksetzen
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {/* Block User Dialog */}
+      <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {userToAction?.is_blocked 
+                ? `Benutzer ${userToAction?.email} entsperren?` 
+                : `Benutzer ${userToAction?.email} sperren?`}
+            </DialogTitle>
+            <DialogDescription>
+              {userToAction?.is_blocked 
+                ? "Der Benutzer kann sich nach dem Entsperren wieder anmelden."
+                : "Der Benutzer kann sich nach dem Sperren nicht mehr anmelden."}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {!userToAction?.is_blocked && (
+            <div className="my-4">
+              <label className="text-sm font-medium mb-2 block">Grund für die Sperrung (optional)</label>
+              <Input
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+                placeholder="z.B. Richtlinienverstoß"
+              />
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsBlockDialogOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button 
+              variant={userToAction?.is_blocked ? "default" : "destructive"}
+              onClick={() => userToAction && handleToggleBlock(userToAction.id, blockReason)}
+            >
+              {userToAction?.is_blocked ? "Entsperren" : "Sperren"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Reset Password Dialog */}
+      <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Passwort zurücksetzen</DialogTitle>
+            <DialogDescription>
+              Ein Passwort-Reset-Link wird an {userToAction?.email} gesendet.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsResetDialogOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button 
+              onClick={() => userToAction && handleResetPassword(userToAction.email, userToAction.id)}
+            >
+              Reset-Link senden
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 } 

@@ -6,6 +6,9 @@
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   backface-visibility: hidden;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 /* Scharfe Dialoge */
@@ -25,4 +28,38 @@ select:focus,
 button:focus,
 [role="combobox"]:focus {
   transform: translateZ(0);
+} 
+
+/* Stellen Sie sicher, dass Hauptcontainer die volle Breite nutzen */
+.w-full, 
+.container {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Responsive Padding für verschiedene Bildschirmgrößen */
+@media (max-width: 640px) {
+  .px-4 {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+}
+
+/* Moderne Scrollbar-Styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 } 

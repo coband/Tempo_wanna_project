@@ -27,7 +27,7 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
 
   return (
     <header className={`border-b bg-white ${className}`}>
-      <div className="flex h-16 items-center px-4 max-w-7xl mx-auto justify-between">
+      <div className="flex h-16 items-center px-4 w-full justify-between">
         <div className="flex items-center">
           <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600 mr-6">
             Wanna

@@ -164,143 +164,147 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   };
 
   return (
-    <div className="bg-white p-6 min-h-screen">
-      <div className="mb-6 flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Bücher</h2>
-        {isAdmin && (
-          <Button onClick={() => setShowAddForm(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+    <div className="p-4">
+      {/* Filter-Abschnitt */}
+      <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-4">Filter</h2>
+        <BookFilter
+          levels={LEVELS}
+          schools={SCHOOLS}
+          types={BOOK_TYPES}
+          subjects={SUBJECTS}
+          yearRange={YEAR_RANGE}
+          locations={LOCATIONS}
+          selectedLevels={selectedLevels}
+          selectedSchool={selectedSchool}
+          selectedType={selectedType}
+          selectedSubjects={selectedSubjects}
+          selectedYearRange={selectedYearRange}
+          selectedAvailability={selectedAvailability}
+          selectedLocation={selectedLocation}
+          onLevelChange={setSelectedLevels}
+          onSchoolChange={setSelectedSchool}
+          onTypeChange={setSelectedType}
+          onSubjectChange={setSelectedSubjects}
+          onYearRangeChange={setSelectedYearRange}
+          onAvailabilityChange={setSelectedAvailability}
+          onLocationChange={setSelectedLocation}
+          onClearFilters={clearFilters}
+        />
+      </div>
+
+      {/* Add Button für Admins */}
+      {isAdmin && (
+        <div className="mb-6">
+          <Button
+            onClick={() => {
+              setSelectedBook(null);
+              setShowAddForm(true);
+            }}
+            className="w-full sm:w-auto"
+          >
+            <Plus className="w-4 h-4 mr-2" />
             Buch hinzufügen
           </Button>
-        )}
-      </div>
-      
-      <BookFilter
-        levels={LEVELS}
-        selectedLevels={selectedLevels}
-        onLevelChange={setSelectedLevels}
-        schools={SCHOOLS}
-        selectedSchool={selectedSchool}
-        onSchoolChange={setSelectedSchool}
-        types={BOOK_TYPES}
-        selectedType={selectedType}
-        onTypeChange={setSelectedType}
-        subjects={SUBJECTS}
-        selectedSubjects={selectedSubjects}
-        onSubjectChange={setSelectedSubjects}
-        yearRange={YEAR_RANGE}
-        selectedYearRange={selectedYearRange}
-        onYearRangeChange={setSelectedYearRange}
-        selectedAvailability={selectedAvailability}
-        onAvailabilityChange={setSelectedAvailability}
-        locations={LOCATIONS}
-        selectedLocation={selectedLocation}
-        onLocationChange={setSelectedLocation}
-        onClearFilters={clearFilters}
-      />
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {/* Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {Array.isArray(filteredBooks) && filteredBooks.length > 0 ? (
           filteredBooks.map((book) => (
             <Card
               key={book.id}
-              className="hover:shadow-lg transition-shadow cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation();
+              className="overflow-hidden transition-all duration-200 hover:shadow-sm flex flex-col cursor-pointer"
+              onClick={() => {
                 setSelectedBook(book);
                 setShowDetailsDialog(true);
               }}
             >
-              <CardContent className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h3 className="font-semibold text-lg">{book.title}</h3>
-                    <p className="text-sm text-gray-600">{book.author}</p>
+              <CardContent className="p-0 flex flex-col h-full">
+                <div 
+                  className="p-3 flex-grow flex flex-col"
+                  style={{
+                    borderLeft: book.available 
+                      ? '4px solid #22c55e' 
+                      : '4px solid #ef4444'
+                  }}
+                >
+                  <h3 className="font-medium text-base line-clamp-2 mb-1">{book.title}</h3>
+                  <p className="text-sm text-gray-500 line-clamp-1 mb-2">{book.author}</p>
+                  
+                  <div className="mt-auto pt-2 flex flex-wrap gap-1 text-xs">
+                    {book.subject && (
+                      <Badge variant="outline" className="bg-gray-100 text-xs">
+                        {book.subject}
+                      </Badge>
+                    )}
+                    {book.level && (
+                      <Badge variant="outline" className="bg-gray-100 text-xs">
+                        {book.level}
+                      </Badge>
+                    )}
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedBook(book);
-                          setShowEditForm(true);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedBook(book);
-                          setShowDeleteDialog(true);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  )}
+                  
+                  <div className="mt-2 text-xs text-gray-500 flex justify-between items-center">
+                    <span className="truncate pr-2">ISBN: {book.isbn}</span>
+                    <span>{book.year}</span>
+                  </div>
                 </div>
-
-                <div className="space-y-2">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger className="w-full">
-                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                          <Badge
-                            variant={book.available ? "default" : "secondary"}
+                
+                {isAdmin && (
+                  <div className="bg-gray-50 p-1.5 flex justify-end space-x-1 border-t">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedBook(book);
+                              setShowEditForm(true);
+                            }}
                           >
-                            {book.available ? "Verfügbar" : "Ausgeliehen"}
-                          </Badge>
-                          <Badge variant="outline">{book.subject}</Badge>
-                          <Badge variant="outline">{book.level}</Badge>
-                          {book.type && (
-                            <Badge variant="outline">{book.type}</Badge>
-                          )}
-                          {book.school && (
-                            <Badge variant="outline">{book.school}</Badge>
-                          )}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Fach: {book.subject}</p>
-                        <p>Stufe: {book.level}</p>
-                        <p>Typ: {book.type || "Lehrmittel"}</p>
-                        <p>Schulhaus: {book.school || "Chriesiweg"}</p>
-                        <p>Standort: {book.location}</p>
-                        <p>
-                          Status: {book.available ? "Verfügbar" : "Ausgeliehen"}
-                        </p>
-                        {!book.available && book.borrowed_at && (
-                          <p>
-                            Ausgeliehen am:{" "}
-                            {new Date(book.borrowed_at).toLocaleDateString()}
-                          </p>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500">
-                      ISBN: {book.isbn}
-                    </span>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Bearbeiten</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedBook(book);
+                              setShowDeleteDialog(true);
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Löschen</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500">
-                      Jahr: {book.year}
-                    </span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           ))
         ) : (
-          <div className="col-span-full text-center py-8 text-gray-500">
-            Keine Bücher gefunden
+          <div className="col-span-full py-8 text-center text-gray-500">
+            Keine Bücher gefunden.
           </div>
         )}
       </div>

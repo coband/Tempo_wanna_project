@@ -131,7 +131,7 @@ const BookManagement = ({
 
         {/* Main content */}
         <main className="flex-1">
-          <div className="max-w-7xl mx-auto">
+          <div className="w-full px-2 sm:px-4">
             <BookGrid
               books={filteredBooks}
               onBookChange={() => {

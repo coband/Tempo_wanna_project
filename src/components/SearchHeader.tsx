@@ -41,7 +41,7 @@ const SearchHeader = ({
     <header
       className={`sticky top-0 z-50 w-full bg-white border-b border-gray-200 px-4 py-3 shadow-sm ${className}`}
     >
-      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center gap-4">
+      <div className="w-full flex flex-col sm:flex-row items-center gap-4">
         <div className="flex-1 flex items-center gap-2">
           <div className="relative flex-1 max-w-2xl">
             <Input

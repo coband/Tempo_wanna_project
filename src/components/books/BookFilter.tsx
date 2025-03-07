@@ -159,31 +159,103 @@ export function BookFilter({
         {/* Schulhaus-Filter */}
         <div className="flex flex-col gap-1 min-w-[160px]">
           <Label className="text-sm font-medium">Schulhaus</Label>
-          <select 
-            className="w-full px-3 py-2 border rounded-md"
-            value={selectedSchool}
-            onChange={(e) => onSchoolChange(e.target.value)}
-          >
-            <option value="">Alle Schulhäuser</option>
-            {schools.map(school => (
-              <option key={school} value={school}>{school}</option>
-            ))}
-          </select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                role="combobox" 
+                className="justify-between"
+              >
+                <span className="truncate">
+                  {selectedSchool ? selectedSchool : "Alle Schulhäuser"}
+                </span>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="grid gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-school-all"
+                    checked={selectedSchool === ""}
+                    onCheckedChange={() => onSchoolChange("")}
+                  />
+                  <label 
+                    htmlFor="filter-school-all"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Alle Schulhäuser
+                  </label>
+                </div>
+                {schools.map((school) => (
+                  <div className="flex items-center space-x-2" key={school}>
+                    <Checkbox 
+                      id={`filter-school-${school}`}
+                      checked={selectedSchool === school}
+                      onCheckedChange={() => onSchoolChange(selectedSchool === school ? "" : school)}
+                    />
+                    <label 
+                      htmlFor={`filter-school-${school}`}
+                      className="text-sm cursor-pointer w-full"
+                    >
+                      {school}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Buchtyp-Filter */}
         <div className="flex flex-col gap-1 min-w-[160px]">
           <Label className="text-sm font-medium">Buchtyp</Label>
-          <select 
-            className="w-full px-3 py-2 border rounded-md"
-            value={selectedType}
-            onChange={(e) => onTypeChange(e.target.value)}
-          >
-            <option value="">Alle Typen</option>
-            {types.map(type => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                role="combobox" 
+                className="justify-between"
+              >
+                <span className="truncate">
+                  {selectedType ? selectedType : "Alle Typen"}
+                </span>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="grid gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-type-all"
+                    checked={selectedType === ""}
+                    onCheckedChange={() => onTypeChange("")}
+                  />
+                  <label 
+                    htmlFor="filter-type-all"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Alle Typen
+                  </label>
+                </div>
+                {types.map((type) => (
+                  <div className="flex items-center space-x-2" key={type}>
+                    <Checkbox 
+                      id={`filter-type-${type}`}
+                      checked={selectedType === type}
+                      onCheckedChange={() => onTypeChange(selectedType === type ? "" : type)}
+                    />
+                    <label 
+                      htmlFor={`filter-type-${type}`}
+                      className="text-sm cursor-pointer w-full"
+                    >
+                      {type}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         
         {/* Fach-Filter */}
@@ -263,36 +335,118 @@ export function BookFilter({
         {/* Verfügbarkeit-Filter */}
         <div className="flex flex-col gap-1 min-w-[160px]">
           <Label className="text-sm font-medium">Verfügbarkeit</Label>
-          <select 
-            className="w-full px-3 py-2 border rounded-md"
-            value={selectedAvailability === null ? "" : selectedAvailability ? "true" : "false"}
-            onChange={(e) => {
-              if (e.target.value === "") {
-                onAvailabilityChange(null);
-              } else {
-                onAvailabilityChange(e.target.value === "true");
-              }
-            }}
-          >
-            <option value="">Alle</option>
-            <option value="true">Verfügbar</option>
-            <option value="false">Ausgeliehen</option>
-          </select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                role="combobox" 
+                className="justify-between"
+              >
+                <span className="truncate">
+                  {selectedAvailability === null 
+                    ? "Alle" 
+                    : selectedAvailability 
+                      ? "Verfügbar" 
+                      : "Ausgeliehen"}
+                </span>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="grid gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-availability-all"
+                    checked={selectedAvailability === null}
+                    onCheckedChange={() => onAvailabilityChange(null)}
+                  />
+                  <label 
+                    htmlFor="filter-availability-all"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Alle
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-availability-available"
+                    checked={selectedAvailability === true}
+                    onCheckedChange={() => onAvailabilityChange(selectedAvailability === true ? null : true)}
+                  />
+                  <label 
+                    htmlFor="filter-availability-available"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Verfügbar
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-availability-unavailable"
+                    checked={selectedAvailability === false}
+                    onCheckedChange={() => onAvailabilityChange(selectedAvailability === false ? null : false)}
+                  />
+                  <label 
+                    htmlFor="filter-availability-unavailable"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Ausgeliehen
+                  </label>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         
         {/* Standort-Filter */}
         <div className="flex flex-col gap-1 min-w-[160px]">
           <Label className="text-sm font-medium">Standort</Label>
-          <select 
-            className="w-full px-3 py-2 border rounded-md"
-            value={selectedLocation}
-            onChange={(e) => onLocationChange(e.target.value)}
-          >
-            <option value="">Alle Standorte</option>
-            {locations.map(location => (
-              <option key={location} value={location}>{location}</option>
-            ))}
-          </select>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                role="combobox" 
+                className="justify-between"
+              >
+                <span className="truncate">
+                  {selectedLocation ? selectedLocation : "Alle Standorte"}
+                </span>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-2" align="start">
+              <div className="grid gap-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="filter-location-all"
+                    checked={selectedLocation === ""}
+                    onCheckedChange={() => onLocationChange("")}
+                  />
+                  <label 
+                    htmlFor="filter-location-all"
+                    className="text-sm cursor-pointer w-full"
+                  >
+                    Alle Standorte
+                  </label>
+                </div>
+                {locations.map((location) => (
+                  <div className="flex items-center space-x-2" key={location}>
+                    <Checkbox 
+                      id={`filter-location-${location}`}
+                      checked={selectedLocation === location}
+                      onCheckedChange={() => onLocationChange(selectedLocation === location ? "" : location)}
+                    />
+                    <label 
+                      htmlFor={`filter-location-${location}`}
+                      className="text-sm cursor-pointer w-full"
+                    >
+                      {location}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
       
