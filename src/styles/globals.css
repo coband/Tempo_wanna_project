@@ -1,0 +1,28 @@
+/* Füge am Ende der Datei hinzu */
+
+/* Globale Regeln für scharfen Text */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  backface-visibility: hidden;
+}
+
+/* Scharfe Dialoge */
+[role="dialog"] {
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  will-change: transform;
+  isolation: isolate;
+  transform: translateZ(0);
+}
+
+/* Schärfen Inputs wenn fokussiert */
+input:focus, 
+select:focus, 
+button:focus,
+[role="combobox"]:focus {
+  transform: translateZ(0);
+} 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { Camera } from "lucide-react";
+import { Camera, ChevronDown } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,14 @@ import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
 import { useAuth } from "@/lib/auth";
 import { fetchBookInfo } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
+import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import React from "react";
+import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS } from "@/lib/constants";
 
 interface BookFormProps {
   book?: Book;
@@ -30,20 +38,6 @@ interface BookFormProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (book: NewBook) => Promise<void>;
 }
-
-const LEVELS = ["KiGa", "Unterstufe", "Mittelstufe", "Oberstufe"];
-const SUBJECTS = [
-  "Mathematik",
-  "Deutsch",
-  "NMG",
-  "Englisch",
-  "Französisch",
-  "Bildnerisches Gestalten",
-  "Musik",
-  "Sport",
-  "TTG",
-  "Divers",
-];
 
 export function BookForm({
   book: initialBook,
@@ -59,35 +53,80 @@ export function BookForm({
 
   const { register, handleSubmit, control, reset, setValue, getValues } =
     useForm<NewBook>();
-
-  // Set form values when initialBook changes
-  useEffect(() => {
-    if (initialBook) {
-      reset({
-        title: initialBook.title,
-        author: initialBook.author,
-        isbn: initialBook.isbn,
-        subject: initialBook.subject,
-        level: initialBook.level,
-        year: initialBook.year,
-        location: initialBook.location,
-        available: initialBook.available,
-        description: initialBook.description || "",
-      });
-    } else {
-      reset({
-        title: "",
-        author: "",
-        isbn: "",
-        subject: "",
-        level: "",
-        year: new Date().getFullYear(),
-        location: "Bibliothek",
-        available: true,
-        description: "",
-      });
+  
+  // Referenz für die Dialog-Inhalts-Komponente
+  const dialogContentRef = React.useRef<HTMLDivElement>(null);
+  
+  // Funktion zum Fokussieren des Dialogs, um Schärfe zu erhalten
+  const ensureDialogSharpness = () => {
+    // Dialog neu fokussieren und Rendering erzwingen
+    if (dialogContentRef.current) {
+      dialogContentRef.current.style.transform = 'translateZ(0)';
+      // Ein minimaler Timeout, um das Rendering zu erzwingen
+      setTimeout(() => {
+        if (dialogContentRef.current) {
+          dialogContentRef.current.style.transform = '';
+        }
+      }, 0);
     }
-  }, [initialBook, reset]);
+  };
+
+  // Formular zurücksetzen, wenn der Dialog geöffnet/geschlossen wird
+  useEffect(() => {
+    if (open) {
+      // Nur wenn der Dialog geöffnet wird
+      if (initialBook) {
+        reset({
+          title: initialBook.title,
+          author: initialBook.author,
+          isbn: initialBook.isbn,
+          subject: initialBook.subject,
+          level: initialBook.level,
+          year: initialBook.year,
+          location: initialBook.location,
+          available: initialBook.available,
+          description: initialBook.description || "",
+          school: initialBook.school || "Chriesiweg",
+          type: initialBook.type || "Lehrmittel",
+        });
+      } else {
+        reset({
+          title: "",
+          author: "",
+          isbn: "",
+          subject: "",
+          level: "",
+          year: new Date().getFullYear(),
+          location: "Bibliothek",
+          available: true,
+          description: "",
+          school: "Chriesiweg",
+          type: "Lehrmittel",
+        });
+      }
+      
+      // Fokus setzen nach dem Zurücksetzen des Formulars
+      setTimeout(ensureDialogSharpness, 10);
+    }
+  }, [initialBook, reset, open]);
+
+  // Funktion zum Abbrechen und Zurücksetzen
+  const handleCancel = () => {
+    reset({
+      title: "",
+      author: "",
+      isbn: "",
+      subject: "",
+      level: "",
+      year: new Date().getFullYear(),
+      location: "Bibliothek",
+      available: true,
+      description: "",
+      school: "Chriesiweg",
+      type: "Lehrmittel",
+    });
+    onOpenChange(false);
+  };
 
   const onSubmitForm = async (data: NewBook) => {
     try {
@@ -129,6 +168,12 @@ export function BookForm({
       setValue("year", bookInfo.year);
       setValue("location", bookInfo.location);
       setValue("description", bookInfo.description);
+      setValue("type", bookInfo.type || "Lehrmittel");
+      setValue("school", bookInfo.school || "Chriesiweg");
+      
+      // Nach dem Laden der Buchinfo Fokus setzen
+      setTimeout(ensureDialogSharpness, 10);
+      
       toast({
         title: "Buchinformationen geladen",
         description:
@@ -146,12 +191,24 @@ export function BookForm({
     } finally {
       setIsLoadingBookInfo(false);
       setShowScanner(false);
+      
+      // Nach dem Schließen des Scanners Fokus setzen
+      setTimeout(ensureDialogSharpness, 10);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px] h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={(newOpen) => {
+      if (!newOpen) {
+        // Wenn Dialog geschlossen wird: Formular zurücksetzen
+        reset();
+      }
+      onOpenChange(newOpen);
+    }}>
+      <DialogContent 
+        ref={dialogContentRef}
+        className="sm:max-w-[425px] h-[90vh] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">
             {initialBook ? "Buch bearbeiten" : "Buch hinzufügen"}
@@ -247,15 +304,105 @@ export function BookForm({
               name="level"
               control={control}
               rules={{ required: "Stufe ist erforderlich" }}
+              render={({ field }) => {
+                const fieldValue = field.value ? String(field.value) : '';
+                const selectedLevels = fieldValue ? fieldValue.split(', ').filter(Boolean) : [];
+                
+                const toggleLevel = (level: string) => {
+                  const isSelected = selectedLevels.includes(level);
+                  let newSelected;
+                  
+                  if (isSelected) {
+                    newSelected = selectedLevels.filter(l => l !== level);
+                  } else {
+                    newSelected = [...selectedLevels, level];
+                  }
+                  
+                  field.onChange(newSelected.join(', '));
+                };
+                
+                const displayText = selectedLevels.length > 0 
+                  ? selectedLevels.join(', ') 
+                  : "Stufen auswählen";
+                
+                return (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        role="combobox" 
+                        aria-expanded={false}
+                        className="w-full justify-between"
+                      >
+                        <span className="truncate">{displayText}</span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0" align="start">
+                      <div className="p-2">
+                        <div className="grid gap-2">
+                          {LEVELS.map((level) => (
+                            <div className="flex items-center space-x-2" key={level}>
+                              <Checkbox 
+                                id={`level-${level}`}
+                                checked={selectedLevels.includes(level)}
+                                onCheckedChange={() => toggleLevel(level)}
+                              />
+                              <label 
+                                htmlFor={`level-${level}`}
+                                className="text-sm cursor-pointer w-full"
+                              >
+                                {level}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                );
+              }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="type">Buchtyp</Label>
+            <Controller
+              name="type"
+              control={control}
+              rules={{ required: "Buchtyp ist erforderlich" }}
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value || "Lehrmittel"}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Stufe auswählen" />
+                    <SelectValue placeholder="Buchtyp auswählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {LEVELS.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level}
+                    {BOOK_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="school">Schulhaus</Label>
+            <Controller
+              name="school"
+              control={control}
+              rules={{ required: "Schulhaus ist erforderlich" }}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Schulhaus auswählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCHOOLS.map((school) => (
+                      <SelectItem key={school} value={school}>
+                        {school}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -310,7 +457,7 @@ export function BookForm({
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
+              onClick={handleCancel}
             >
               Abbrechen
             </Button>

@@ -98,7 +98,7 @@ serve(async (req) => {
           },
           {
             role: "user",
-            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, Unterstufe, Mittelstufe, Oberstufe), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht wekche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
+            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr', 'Typ' (Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Lernmaterial), 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht wekche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
           },
         ],
         max_tokens: 1000,
@@ -122,7 +122,7 @@ serve(async (req) => {
     const content = result.choices[0].message.content;
     console.log("Content from API:", content);
 
-    // Ensure we have valid JSON
+    // Nach dem Abrufen der Buchdaten vom API
     let bookData;
     try {
       // Remove any potential markdown formatting
@@ -143,6 +143,11 @@ serve(async (req) => {
       );
     }
 
+    // Spezieller Fix für das Level-Feld, wenn es als Array übergeben wird
+    if (bookData?.Stufe && Array.isArray(bookData.Stufe)) {
+      bookData.Stufe = bookData.Stufe.join(', ');
+    }
+
     // Set default values for missing fields
     const defaultValues = {
       Titel: null,
@@ -152,6 +157,7 @@ serve(async (req) => {
       Fach: null,
       Erscheinungsjahr: null,
       Beschreibung: null,
+      Typ: null,
     };
 
     bookData = { ...defaultValues, ...bookData };
@@ -183,10 +189,16 @@ serve(async (req) => {
       title: bookData.Titel || "Unbekannter Titel",
       author: bookData.Autor || "Unbekannt",
       isbn: isbn, // Verwende immer die ursprüngliche ISBN
-      level: bookData.Stufe || "Unbekannt",
+      // Sicherstellen, dass level immer als Text gespeichert wird
+      level: typeof bookData.Stufe === 'string' 
+        ? bookData.Stufe 
+        : Array.isArray(bookData.Stufe) 
+          ? bookData.Stufe.join(', ') 
+          : bookData.Stufe?.toString() || "Unbekannt",
       subject: bookData.Fach || "Unbekannt",
       year: bookData.Erscheinungsjahr ? parseInt(bookData.Erscheinungsjahr, 10) : new Date().getFullYear(),
-      description: bookData.Beschreibung || "Keine Beschreibung verfügbar"
+      description: bookData.Beschreibung || "Keine Beschreibung verfügbar",
+      type: bookData.Typ || "Lehrmittel"   
     };
     
     // Im Vorschaumodus geben wir nur die Buchdaten zurück, ohne in die Datenbank zu schreiben
@@ -247,6 +259,7 @@ serve(async (req) => {
           formattedBookData.subject ? `Fach: ${formattedBookData.subject}` : "",
           formattedBookData.level ? `Stufe: ${formattedBookData.level}` : "",
           formattedBookData.year ? `Jahr: ${formattedBookData.year}` : "",
+          formattedBookData.type ? `Typ: ${formattedBookData.type}` : "",
           formattedBookData.description || ""
         ].filter(Boolean).join(". ");
         

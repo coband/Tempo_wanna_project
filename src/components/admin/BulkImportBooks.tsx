@@ -15,6 +15,8 @@ interface BookPreview {
   year: number | null;
   subject: string | null;
   level: string | null;
+  type: string | null;
+  school: string | null;
   selected: boolean; // Flag zur Auswahl/Abwahl
   error?: string; // Für Fehler beim Abrufen der Vorschau
 }
@@ -120,6 +122,8 @@ export default function BulkImportBooks() {
           year: item.data?.year || null,
           subject: item.data?.subject || null,
           level: item.data?.level || null,
+          type: item.data?.type || "Lehrmittel",
+          school: item.data?.school || "Chriesiweg",
           selected: true // Standardmäßig ausgewählt
         })),
         ...data.failed.map((item: any) => ({
@@ -129,6 +133,8 @@ export default function BulkImportBooks() {
           year: null,
           subject: null,
           level: null,
+          type: null,
+          school: null,
           selected: false, // Fehlgeschlagene standardmäßig nicht ausgewählt
           error: item.error
         }))
@@ -294,6 +300,10 @@ export default function BulkImportBooks() {
                           <p><span className="font-medium">Jahr:</span> {book.year || 'N/A'}</p>
                           <p><span className="font-medium">Fach:</span> {book.subject || 'N/A'}</p>
                           <p><span className="font-medium">Stufe:</span> {book.level || 'N/A'}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm mt-1">
+                          <p><span className="font-medium">Typ:</span> {book.type || 'Lehrmittel'}</p>
+                          <p><span className="font-medium">Schulhaus:</span> {book.school || 'Chriesiweg'}</p>
                         </div>
                       </>
                     )}

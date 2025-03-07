@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { useAuth } from "@/lib/auth";
 import BookDetails from "./books/BookDetails.tsx";
@@ -13,6 +13,8 @@ import { Button } from "./ui/button";
 import { BookForm } from "./books/BookForm";
 import { Book, createBook, updateBook, deleteBook } from "@/lib/books";
 import { useToast } from "./ui/use-toast";
+import { BookFilter } from "./books/BookFilter";
+import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS, LOCATIONS, YEAR_RANGE } from "@/lib/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,7 +40,85 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const { toast } = useToast();
+  
+  // Filter-States
+  const [filteredBooks, setFilteredBooks] = useState<Book[]>(books);
+  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState("");
+  const [selectedType, setSelectedType] = useState("");
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [selectedYearRange, setSelectedYearRange] = useState<[number, number]>(YEAR_RANGE);
+  const [selectedAvailability, setSelectedAvailability] = useState<boolean | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState("");
+  
+  // Bücher filtern, wenn sich Filter oder Bücher ändern
+  useEffect(() => {
+    let result = [...books];
+    
+    // Nach Klassenstufe filtern
+    if (selectedLevels.length > 0) {
+      result = result.filter(book => {
+        // Wir teilen den level-String an Kommas, um alle Stufen zu erhalten
+        const bookLevels = book.level?.split(', ') || [];
+        // Wir prüfen, ob mindestens eine der ausgewählten Stufen im Buch vorkommt
+        return selectedLevels.some(level => bookLevels.includes(level));
+      });
+    }
+    
+    // Nach Schulhaus filtern
+    if (selectedSchool) {
+      result = result.filter(book => book.school === selectedSchool);
+    }
+    
+    // Nach Buchtyp filtern
+    if (selectedType) {
+      result = result.filter(book => book.type === selectedType);
+    }
+    
+    // Nach Fach filtern
+    if (selectedSubjects.length > 0) {
+      result = result.filter(book => selectedSubjects.includes(book.subject));
+    }
+    
+    // Nach Erscheinungsjahr filtern
+    result = result.filter(book => {
+      const year = book.year;
+      return year >= selectedYearRange[0] && year <= selectedYearRange[1];
+    });
+    
+    // Nach Verfügbarkeit filtern
+    if (selectedAvailability !== null) {
+      result = result.filter(book => book.available === selectedAvailability);
+    }
+    
+    // Nach Standort filtern
+    if (selectedLocation) {
+      result = result.filter(book => book.location === selectedLocation);
+    }
+    
+    setFilteredBooks(result);
+  }, [
+    books, 
+    selectedLevels, 
+    selectedSchool, 
+    selectedType,
+    selectedSubjects,
+    selectedYearRange,
+    selectedAvailability,
+    selectedLocation
+  ]);
 
+  // Filter zurücksetzen
+  const clearFilters = () => {
+    setSelectedLevels([]);
+    setSelectedSchool("");
+    setSelectedType("");
+    setSelectedSubjects([]);
+    setSelectedYearRange(YEAR_RANGE);
+    setSelectedAvailability(null);
+    setSelectedLocation("");
+  };
+  
   const handleAdd = async (book: Omit<Book, "id">) => {
     try {
       await createBook(book);
@@ -94,10 +174,34 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
           </Button>
         )}
       </div>
+      
+      <BookFilter
+        levels={LEVELS}
+        selectedLevels={selectedLevels}
+        onLevelChange={setSelectedLevels}
+        schools={SCHOOLS}
+        selectedSchool={selectedSchool}
+        onSchoolChange={setSelectedSchool}
+        types={BOOK_TYPES}
+        selectedType={selectedType}
+        onTypeChange={setSelectedType}
+        subjects={SUBJECTS}
+        selectedSubjects={selectedSubjects}
+        onSubjectChange={setSelectedSubjects}
+        yearRange={YEAR_RANGE}
+        selectedYearRange={selectedYearRange}
+        onYearRangeChange={setSelectedYearRange}
+        selectedAvailability={selectedAvailability}
+        onAvailabilityChange={setSelectedAvailability}
+        locations={LOCATIONS}
+        selectedLocation={selectedLocation}
+        onLocationChange={setSelectedLocation}
+        onClearFilters={clearFilters}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {Array.isArray(books) && books.length > 0 ? (
-          books.map((book) => (
+        {Array.isArray(filteredBooks) && filteredBooks.length > 0 ? (
+          filteredBooks.map((book) => (
             <Card
               key={book.id}
               className="hover:shadow-lg transition-shadow cursor-pointer"
@@ -153,11 +257,19 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                           </Badge>
                           <Badge variant="outline">{book.subject}</Badge>
                           <Badge variant="outline">{book.level}</Badge>
+                          {book.type && (
+                            <Badge variant="outline">{book.type}</Badge>
+                          )}
+                          {book.school && (
+                            <Badge variant="outline">{book.school}</Badge>
+                          )}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
                         <p>Fach: {book.subject}</p>
                         <p>Stufe: {book.level}</p>
+                        <p>Typ: {book.type || "Lehrmittel"}</p>
+                        <p>Schulhaus: {book.school || "Chriesiweg"}</p>
                         <p>Standort: {book.location}</p>
                         <p>
                           Status: {book.available ? "Verfügbar" : "Ausgeliehen"}
@@ -179,7 +291,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-500">
-                      Year: {book.year}
+                      Jahr: {book.year}
                     </span>
                   </div>
                 </div>

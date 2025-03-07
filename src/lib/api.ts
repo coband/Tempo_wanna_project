@@ -8,14 +8,19 @@ export async function fetchBookInfo(isbn: string) {
     if (!accessToken) {
       throw new Error("No access token available");
     }
+    
+    // URL für Edge-Funktionen aus Umgebungsvariablen
+    const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
+      '';
 
-    const response = await fetch(`${supabase.functions.url}/book-info`, {
+    const response = await fetch(`${functionsUrl}/book-info`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ isbn }),
+      body: JSON.stringify({ isbn, preview: true }), // Wir verwenden den Preview-Modus
     });
 
     if (!response.ok) {
@@ -30,15 +35,17 @@ export async function fetchBookInfo(isbn: string) {
     }
 
     return {
-      title: data.Titel,
-      author: data.Autor,
-      isbn: data.ISBN,
-      level: data.Stufe,
-      subject: data.Fach,
-      year: parseInt(data.Erscheinungsjahr),
-      location: "Bibliothek", // Default value
+      title: data.title || "",
+      author: data.author || "",
+      isbn: data.isbn || isbn,
+      level: data.level || "",
+      subject: data.subject || "",
+      year: data.year ? parseInt(data.year) : new Date().getFullYear(),
+      location: data.location || "Bibliothek", // Default value
       available: true, // Default value
-      description: data.Beschreibung || "",
+      description: data.description || "",
+      type: data.type || "Lehrmittel", // Neues Feld
+      school: data.school || "Chriesiweg", // Neues Feld
     };
   } catch (error) {
     console.error("Error fetching book info:", error);
