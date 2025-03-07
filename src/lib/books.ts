@@ -18,6 +18,7 @@ export interface Book {
   borrowed_by: string;
   school: string;
   type: string;
+  publisher: string;
 }
 
 export type NewBook = Database["public"]["Tables"]["books"]["Insert"];
@@ -109,6 +110,41 @@ export async function updateBook(id: string, book: Partial<Book>) {
   const { error } = await supabase.from("books").update(book).eq("id", id);
 
   if (error) throw error;
+  
+  // Embedding nach der Aktualisierung neu generieren
+  try {
+    // Rufe die createEmbeddings-Funktion auf
+    const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
+      '';
+    
+    // Holen des API-Schlüssels
+    const { data: authData } = await supabase.auth.getSession();
+    const accessToken = authData.session?.access_token;
+      
+    if (functionsUrl && accessToken) {
+      console.log(`Aktualisiere Embedding für Buch ${id}`);
+      
+      // Asynchron die createEmbeddings-Funktion aufrufen
+      fetch(`${functionsUrl}/createEmbeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          bookIds: [id]
+        })
+      }).catch(embedError => {
+        console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
+      });
+    } else {
+      console.warn("Konnte createEmbeddings nicht aufrufen: URL oder Token fehlt");
+    }
+  } catch (embedError) {
+    console.error("Fehler bei der Embedding-Aktualisierung:", embedError);
+    // Wir werfen keinen Fehler, da das Buch bereits aktualisiert wurde
+  }
 }
 
 export async function deleteBook(id: string) {

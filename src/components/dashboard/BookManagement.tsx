@@ -96,7 +96,8 @@ const BookManagement = ({
           book.year?.toString().includes(query) ||
           book.type?.toLowerCase().includes(query) ||
           book.school?.toLowerCase().includes(query) ||
-          book.location?.toLowerCase().includes(query);
+          book.location?.toLowerCase().includes(query) ||
+          book.publisher?.toLowerCase().includes(query);
         
         return matches;
       });

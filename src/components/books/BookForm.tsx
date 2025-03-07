@@ -88,6 +88,7 @@ export function BookForm({
           description: initialBook.description || "",
           school: initialBook.school || "Chriesiweg",
           type: initialBook.type || "Lehrmittel",
+          publisher: initialBook.publisher || "",
         });
       } else {
         reset({
@@ -102,6 +103,7 @@ export function BookForm({
           description: "",
           school: "Chriesiweg",
           type: "Lehrmittel",
+          publisher: "",
         });
       }
       
@@ -124,6 +126,7 @@ export function BookForm({
       description: "",
       school: "Chriesiweg",
       type: "Lehrmittel",
+      publisher: "",
     });
     onOpenChange(false);
   };
@@ -170,6 +173,7 @@ export function BookForm({
       setValue("description", bookInfo.description);
       setValue("type", bookInfo.type || "Lehrmittel");
       setValue("school", bookInfo.school || "Chriesiweg");
+      setValue("publisher", bookInfo.publisher || "");
       
       // Nach dem Laden der Buchinfo Fokus setzen
       setTimeout(ensureDialogSharpness, 10);
@@ -385,6 +389,16 @@ export function BookForm({
                   </SelectContent>
                 </Select>
               )}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="publisher">Verlag</Label>
+            <Input
+              id="publisher"
+              {...register("publisher")}
+              placeholder="Verlag eingeben"
+              className="w-full"
             />
           </div>
 

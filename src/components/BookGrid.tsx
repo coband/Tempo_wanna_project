@@ -231,7 +231,10 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                   }}
                 >
                   <h3 className="font-medium text-base line-clamp-2 mb-1">{book.title}</h3>
-                  <p className="text-sm text-gray-500 line-clamp-1 mb-2">{book.author}</p>
+                  <p className="text-sm text-gray-500 line-clamp-1 mb-1">{book.author}</p>
+                  {book.publisher && (
+                    <p className="text-xs text-gray-400 line-clamp-1 mb-2">Verlag: {book.publisher}</p>
+                  )}
                   
                   <div className="mt-auto pt-2 flex flex-wrap gap-1 text-xs">
                     {book.subject && (

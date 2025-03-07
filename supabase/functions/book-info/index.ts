@@ -98,7 +98,7 @@ serve(async (req) => {
           },
           {
             role: "user",
-            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr', 'Typ' (Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Lernmaterial), 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht wekche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
+            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Divers), 'Erscheinungsjahr', 'Typ' (Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht wekche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
           },
         ],
         max_tokens: 1000,
@@ -158,6 +158,7 @@ serve(async (req) => {
       Erscheinungsjahr: null,
       Beschreibung: null,
       Typ: null,
+      Verlag: null,
     };
 
     bookData = { ...defaultValues, ...bookData };
@@ -198,7 +199,8 @@ serve(async (req) => {
       subject: bookData.Fach || "Unbekannt",
       year: bookData.Erscheinungsjahr ? parseInt(bookData.Erscheinungsjahr, 10) : new Date().getFullYear(),
       description: bookData.Beschreibung || "Keine Beschreibung verfügbar",
-      type: bookData.Typ || "Lehrmittel"   
+      type: bookData.Typ || "Lehrmittel",
+      publisher: bookData.Verlag || "Unbekannt"
     };
     
     // Im Vorschaumodus geben wir nur die Buchdaten zurück, ohne in die Datenbank zu schreiben
@@ -221,7 +223,7 @@ serve(async (req) => {
       created_at: new Date().toISOString(),
       available: true, // Standard: verfügbar
       location: 'Schule', // Standardstandort
-      // vector_source wird später gesetzt
+      // vector_source wird automatisch durch die generierte Spalte in der Datenbank erzeugt
     };
 
     console.log("Füge Buch in die Datenbank ein:", bookEntry);
@@ -249,52 +251,29 @@ serve(async (req) => {
 
     console.log("Buch erfolgreich in die Datenbank eingefügt:", insertedBook);
 
-    // Nach dem Einfügen den vector_source als separaten Schritt setzen
+    // Nach dem Einfügen nur noch die Embedding-Generierung anstoßen
+    // Der vector_source wird automatisch durch die generierte Spalte in der Datenbank erstellt
     try {
       if (insertedBook && insertedBook.id) {
-        // Vector-Source für Embedding erstellen
-        const vectorSource = [
-          formattedBookData.title || "Unbekannter Titel",
-          formattedBookData.author ? `Autor: ${formattedBookData.author}` : "",
-          formattedBookData.subject ? `Fach: ${formattedBookData.subject}` : "",
-          formattedBookData.level ? `Stufe: ${formattedBookData.level}` : "",
-          formattedBookData.year ? `Jahr: ${formattedBookData.year}` : "",
-          formattedBookData.type ? `Typ: ${formattedBookData.type}` : "",
-          formattedBookData.description || ""
-        ].filter(Boolean).join(". ");
+        // Optional: Embedding-Generierung für dieses Buch anstoßen
+        console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
         
-        console.log(`Aktualisiere vector_source für Buch ${insertedBook.id}`);
-        
-        const { error: updateError } = await adminClient
-          .from("books")
-          .update({ vector_source: vectorSource })
-          .eq("id", insertedBook.id);
-          
-        if (updateError) {
-          console.error(`Fehler beim Aktualisieren des vector_source:`, updateError);
-        } else {
-          console.log(`vector_source erfolgreich aktualisiert für Buch ${insertedBook.id}`);
-          
-          // Optional: Embedding-Generierung für dieses Buch anstoßen
-          console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
-          
-          // Asynchron die createEmbeddings-Funktion aufrufen
-          fetch(`${SUPABASE_URL}/functions/v1/createEmbeddings`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
-            },
-            body: JSON.stringify({
-              bookIds: [insertedBook.id]
-            })
-          }).catch(embedError => {
-            console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
-          });
-        }
+        // Asynchron die createEmbeddings-Funktion aufrufen
+        fetch(`${SUPABASE_URL}/functions/v1/createEmbeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            bookIds: [insertedBook.id]
+          })
+        }).catch(embedError => {
+          console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
+        });
       }
     } catch (error) {
-      // Fehler beim Update von vector_source oder beim Starten der Embedding-Generierung behandeln
+      // Fehler beim Starten der Embedding-Generierung behandeln
       console.error("Fehler nach dem Einfügen des Buchs:", error);
     }
 

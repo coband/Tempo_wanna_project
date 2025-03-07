@@ -25,6 +25,9 @@ export type Database = {
           title: string
           user_id: string | null
           year: number
+          publisher: string | null
+          type: string
+          school: string
         }
         Insert: {
           author: string
@@ -41,6 +44,9 @@ export type Database = {
           title: string
           user_id?: string | null
           year: number
+          publisher?: string | null
+          type?: string
+          school?: string
         }
         Update: {
           author?: string
@@ -57,6 +63,9 @@ export type Database = {
           title?: string
           user_id?: string | null
           year?: number
+          publisher?: string | null
+          type?: string
+          school?: string
         }
         Relationships: []
       }

@@ -46,6 +46,7 @@ export async function fetchBookInfo(isbn: string) {
       description: data.description || "",
       type: data.type || "Lehrmittel", // Neues Feld
       school: data.school || "Chriesiweg", // Neues Feld
+      publisher: data.publisher || "", // Verlagsfeld hinzufügen
     };
   } catch (error) {
     console.error("Error fetching book info:", error);
