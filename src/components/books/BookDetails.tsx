@@ -115,6 +115,7 @@ function BookDetails({
             </Badge>
             {book.subject && <Badge variant="outline">{book.subject}</Badge>}
             {book.level && <Badge variant="outline">{book.level}</Badge>}
+            {book.type && <Badge variant="outline" className="bg-gray-100">{book.type}</Badge>}
           </div>
           <Button
             onClick={handleAvailabilityToggle}
@@ -154,6 +155,10 @@ function BookDetails({
             <div>
               <p className="text-sm font-medium text-gray-500">Verlag</p>
               <p className="font-medium">{book.publisher || "Keine Angabe"}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-500">Typ</p>
+              <p className="font-medium">{book.type || "Keine Angabe"}</p>
             </div>
           </div>
 

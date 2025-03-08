@@ -247,6 +247,11 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                         {book.level}
                       </Badge>
                     )}
+                    {book.type && (
+                      <Badge variant="outline" className="bg-gray-100 text-xs">
+                        {book.type}
+                      </Badge>
+                    )}
                   </div>
                   
                   <div className="mt-2 text-xs text-gray-500 flex justify-between items-center">

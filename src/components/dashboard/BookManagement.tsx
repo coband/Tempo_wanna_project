@@ -86,22 +86,84 @@ const BookManagement = ({
     // Search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      result = result.filter((book) => {
-        const matches =
-          book.title?.toLowerCase().includes(query) ||
-          book.author?.toLowerCase().includes(query) ||
-          book.isbn?.toLowerCase().includes(query) ||
-          book.subject?.toLowerCase().includes(query) ||
-          book.level?.toLowerCase().includes(query) ||
-          book.year?.toString().includes(query) ||
-          book.type?.toLowerCase().includes(query) ||
-          book.school?.toLowerCase().includes(query) ||
-          book.location?.toLowerCase().includes(query) ||
-          book.publisher?.toLowerCase().includes(query);
+      console.log("Suche nach:", query);
+      
+      // Erste Prüfung: Könnte es sich um einen Verlagsnamen handeln?
+      // Liste häufiger deutscher Verlage
+      const knownPublishers = ["westermann", "cornelsen", "klett", "diesterweg", "duden", "carlsen", "beltz", "raabe"];
+      const mightBePublisher = knownPublishers.some(p => query.includes(p));
+      
+      // Wenn es sich um einen bekannten Verlagsnamen handeln könnte, prüfe zuerst genau im Verlagsfeld
+      if (mightBePublisher) {
+        const publisherMatches = result.filter(book => 
+          book.publisher && book.publisher.toLowerCase().includes(query)
+        );
         
-        return matches;
+        // Wenn wir Treffer im Verlagsfeld haben, zeige nur diese an
+        if (publisherMatches.length > 0) {
+          console.log(`Gefunden: ${publisherMatches.length} Bücher vom Verlag mit "${query}"`);
+          return setFilteredBooks(publisherMatches);
+        }
+      }
+      
+      // Ansonsten: Normale Suche in allen Feldern
+      // Mit zusätzlichem Logging, um zu sehen, wo genau Treffer gefunden werden
+      const matchedBooks = result.filter(book => {
+        // Für Debug-Zwecke: Prüfe jedes Feld einzeln und protokolliere
+        let found = false;
+        let matchField = "";
+        
+        // Einzelne Felder-Prüfung
+        if (book.title && book.title.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Titel: " + book.title;
+        }
+        else if (book.author && book.author.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Autor: " + book.author;
+        }
+        else if (book.publisher && book.publisher.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Verlag: " + book.publisher;
+        }
+        else if (book.description && book.description.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Beschreibung: " + book.description.substring(0, 50) + "...";
+        }
+        else if (book.subject && book.subject.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Fach: " + book.subject;
+        }
+        else if (book.type && book.type.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Typ: " + book.type;
+        }
+        else if (book.isbn && book.isbn.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "ISBN: " + book.isbn;
+        }
+        else if (book.level && book.level.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Stufe: " + book.level;
+        }
+        else if (book.school && book.school.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Schule: " + book.school;
+        }
+        else if (book.location && book.location.toLowerCase().includes(query)) {
+          found = true;
+          matchField = "Standort: " + book.location;
+        }
+        
+        if (found) {
+          console.log(`Treffer für "${query}" in Buch "${book.title}": ${matchField}`);
+        }
+        
+        return found;
       });
-      console.log("After search filter:", result.length);
+      
+      console.log(`Insgesamt ${matchedBooks.length} Bücher gefunden für: "${query}"`);
+      result = matchedBooks;
     }
 
     setFilteredBooks(result);
@@ -126,7 +188,7 @@ const BookManagement = ({
       <div className="flex flex-col">
         <SearchHeader
           onSearch={handleSearch}
-          books={allBooks}
+          books={searchQuery && searchQuery.toLowerCase().trim() ? filteredBooks : allBooks}
           isLoading={loading}
         />
 

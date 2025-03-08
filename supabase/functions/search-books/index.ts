@@ -213,6 +213,24 @@ serve(async (req) => {
 // VERBESSERUNG 3: Abfrageerweiterung für kurze Anfragen
 async function enhanceQuery(query) {
   const queryWords = query.split(/\s+/).length;
+  const lowerQuery = query.toLowerCase();
+  
+  // Erkennung von Verlagsanfragen
+  const publisherKeywords = ['verlag', 'publisher', 'edition', 'press'];
+  const isPublisherQuery = publisherKeywords.some(keyword => lowerQuery.includes(keyword));
+  
+  // Wenn es eine direkte Verlagssuche zu sein scheint
+  if (isPublisherQuery) {
+    console.log('Verlagssuche erkannt:', query);
+    return `Bücher vom Verlag ${query}`;
+  }
+  
+  // Wenn es ein potenzieller Verlagsname ist (ohne das Wort "Verlag")
+  const commonPublishers = ['cornelsen', 'westermann', 'carlsen', 'klett', 'diesterweg', 'duden'];
+  if (commonPublishers.some(publisher => lowerQuery.includes(publisher)) && !lowerQuery.includes('verlag')) {
+    console.log('Verlagsname erkannt:', query);
+    return `Bücher vom Verlag ${query} Verlag`;
+  }
   
   if (queryWords <= 2) {
     // Vordefinierte Erweiterungen für kurze Anfragen
@@ -297,6 +315,8 @@ async function performKeywordSearch(supabase, query) {
       author.ilike.%${keyword}% OR
       subject.ilike.%${keyword}% OR
       level.ilike.%${keyword}% OR
+      type.ilike.%${keyword}% OR
+      publisher.ilike.%${keyword}% OR
       description.ilike.%${keyword}%
     `;
   });
@@ -364,49 +384,60 @@ function mergeResults(embeddingResults, keywordResults, originalQuery) {
   return mergedResults.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
 }
 
-// Funktion zum Extrahieren wichtiger Schlüsselwörter aus der Anfrage
+// Wichtige Schlüsselwörter mit Gewichtung extrahieren
 function extractImportantKeywords(query) {
-  // Anfrage in Wörter aufteilen
+  // Anfrage in Kleinbuchstaben umwandeln und in einzelne Wörter aufteilen
   const words = query.toLowerCase().split(/\s+/);
   
-  // Stoppwörter filtern
-  const stopwords = [
-    'der', 'die', 'das', 'ein', 'eine', 'mit', 'für', 'und', 'oder', 'in', 'im', 'an', 'auf',
-    'ich', 'mir', 'mich', 'du', 'dir', 'dich', 'er', 'sie', 'es', 'wir', 'uns', 'ihr', 'euch',
-    'suche', 'suchen', 'finden', 'gesucht', 'buch', 'bücher', 'lehrmittel', 'material',
-    'wie', 'was', 'wann', 'wo', 'warum', 'welche', 'welches', 'gibt', 'zum', 'zur', 'zu'
-  ];
+  // Stoppwörter und sehr kurze Wörter filtern
+  const stoppwords = ['der', 'die', 'das', 'ein', 'eine', 'mit', 'für', 'und', 'oder', 'in', 'im', 'an', 'auf', 'zu', 'vom', 'bei', 'aus'];
   
-  // Fachspezifische Begriffe, die besonders wichtig sind
-  const educationKeywords = [
-    'mathe', 'mathematik', 'deutsch', 'englisch', 'französisch', 'biologie', 'chemie', 'physik',
-    'geschichte', 'geographie', 'musik', 'kunst', 'sport', 'informatik', 'sachunterricht',
-    'grundschule', 'sekundarstufe', 'gymnasium', 'realschule', 'hauptschule', 'berufsschule',
-    'kindergarten', 'vorschule', 'oberstufe', 'primarstufe', 'didaktik', 'pädagogik',
-    'unterricht', 'lehren', 'lernen', 'differenzierung', 'inklusion', 'förderung',
-    'arbeitsblatt', 'curriculum', 'lehrplan', 'kompetenz', 'bildungsstandard',
-    'prüfung', 'test', 'klassenarbeit', 'klausur', 'bewertung', 'leistung',
-    'fachdidaktik', 'methodik', 'lernmethode', 'unterrichtsmethode'
-  ];
+  // Spezielle Schlüsselwörter, die wichtiger sind (mit höherer Gewichtung)
+  const specialKeywords = {
+    'verlag': 2.0,        // Sehr hohe Gewichtung für Verlagssuchen
+    'publisher': 2.0,
+    'cornelsen': 2.0,     // Bekannte Verlagsnamen vorab erkennen
+    'westermann': 2.0,
+    'carlsen': 2.0,
+    'klett': 2.0,
+    'diesterweg': 2.0,
+    'duden': 2.0,
+    'schroedel': 2.0,
+    'raabe': 2.0,
+    'sachbuch': 1.5,      // Wichtige Buchkategorien
+    'lehrbuch': 1.5,
+    'lehrwerk': 1.5,
+    'schulbuch': 1.5,
+    'arbeitsheft': 1.5
+  };
   
-  // Wichtige Schlüsselwörter extrahieren
-  const keywords = words.filter(word => 
-    word.length > 2 && 
-    !stopwords.includes(word)
-  );
+  // Ergebnis-Array für Schlüsselwörter mit Gewichtung
+  const result = [];
   
-  // Gewichtung für jedes Keyword
-  return keywords.map(keyword => {
-    // Höhere Gewichtung für bildungsspezifische Begriffe
-    const isEducationTerm = educationKeywords.some(eduTerm => 
-      keyword.includes(eduTerm) || eduTerm.includes(keyword)
-    );
+  // Wörter verarbeiten
+  for (const word of words) {
+    // Ignoriere zu kurze Wörter und Stoppwörter
+    if (word.length <= 2 || stoppwords.includes(word)) {
+      continue;
+    }
     
-    return {
-      word: keyword,
-      weight: isEducationTerm ? 2.0 : 1.0 // Doppelte Gewichtung für Bildungsbegriffe
-    };
-  });
+    // Bestimme die Gewichtung des Wortes
+    let weight = 1.0; // Standardgewichtung
+    
+    // Prüfe auf spezielle Schlüsselwörter
+    for (const [keyword, keywordWeight] of Object.entries(specialKeywords)) {
+      if (word.includes(keyword) || keyword.includes(word)) {
+        weight = keywordWeight;
+        break;
+      }
+    }
+    
+    // Füge das Wort mit seiner Gewichtung zum Ergebnis hinzu
+    result.push({ word, weight });
+  }
+  
+  // Nach Gewichtung absteigend sortieren
+  return result.sort((a, b) => b.weight - a.weight);
 }
 
 // Funktion zur Berechnung eines Keyword-Match-Scores
@@ -421,6 +452,8 @@ function calculateKeywordMatchScore(book, keywords) {
     book.author || '',
     book.subject || '',
     book.level || '',
+    book.type || '',
+    book.publisher || '',
     book.description || ''
   ].join(' ').toLowerCase();
   
@@ -451,11 +484,32 @@ function calculateKeywordMatchScore(book, keywords) {
     if (book.subject && book.subject.toLowerCase().includes(word)) {
       totalScore += weight * 0.2;
     }
+    
+    // ERHÖHTE Gewichtung für Verlag - 1.0 für exakte Übereinstimmung
+    if (book.publisher) {
+      const publisherLower = book.publisher.toLowerCase();
+      // Prüfe auf exakte Übereinstimmung mit Verlagsnamen
+      if (exactRegex.test(publisherLower)) {
+        totalScore += weight * 1.0; // Sehr hohe Gewichtung für exakte Verlagsübereinstimmung
+        console.log(`Exakte Verlagsübereinstimmung gefunden für: ${word} in ${book.publisher}`);
+      }
+      // Prüfe auf Teilübereinstimmung
+      else if (publisherLower.includes(word)) {
+        totalScore += weight * 0.6; // Hohe Gewichtung für Teilübereinstimmung
+        console.log(`Teilübereinstimmung im Verlag gefunden für: ${word} in ${book.publisher}`);
+      }
+    }
+    
+    // Gewichtung für Typ
+    if (book.type && book.type.toLowerCase().includes(word)) {
+      totalScore += weight * 0.2;
+    }
   });
   
   // Normalisiere den Score
   const normalizedScore = totalWeight > 0 ? totalScore / totalWeight : 0;
   
-  // Skaliere auf einen Wert zwischen 0 und 0.5 (als Ergänzung zum Embedding-Score)
-  return normalizedScore * 0.5;
+  // Skaliere auf einen Wert zwischen 0 und 0.8 (als Ergänzung zum Embedding-Score)
+  // Erhöhung des maximalen Keyword-Scores von 0.5 auf 0.8
+  return normalizedScore * 0.8;
 } 

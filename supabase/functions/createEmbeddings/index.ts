@@ -22,6 +22,8 @@ function prepareVectorSource(book: any): string {
             book.subject ? `Fach: ${book.subject}` : "",
             book.level ? `Stufe: ${book.level}` : "",
             book.year ? `Jahr: ${book.year}` : "",
+            book.type ? `Typ: ${book.type}` : "",
+            book.publisher ? `Verlag: ${book.publisher}` : "",
             book.description || ""
         ];
         
@@ -67,7 +69,7 @@ serve(async (req) => {
         // 1. Bücher abrufen, die Embeddings benötigen
         let query = supabase
             .from("books")
-            .select("id, title, author, subject, level, year, description, vector_source");
+            .select("id, title, author, subject, level, year, description, type, publisher, vector_source");
             
         // Entweder spezifische Bücher oder solche ohne Embedding verarbeiten
         if (processSpecificBooks) {
