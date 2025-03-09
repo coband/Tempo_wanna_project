@@ -3,22 +3,27 @@ import ReactDOM from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { BrowserRouter } from "react-router-dom";
-import { AuthProvider } from "./components/auth/AuthProvider";
 import { Toaster } from "./components/ui/toaster";
+import { ClerkProvider } from "@clerk/clerk-react";
 
 // Import and initialize Tempo Devtools
 import { TempoDevtools } from "tempo-devtools";
 TempoDevtools.init();
 
 const basename = import.meta.env.BASE_URL;
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+if (!clerkPubKey) {
+  throw new Error("Missing Clerk Publishable Key");
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter basename={basename}>
-      <AuthProvider>
+    <ClerkProvider publishableKey={clerkPubKey}>
+      <BrowserRouter basename={basename}>
         <App />
         <Toaster />
-      </AuthProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ClerkProvider>
   </React.StrictMode>,
 );

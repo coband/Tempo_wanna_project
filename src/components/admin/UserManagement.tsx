@@ -6,9 +6,7 @@ import {
   toggleUserBlock, 
   resetUserPassword,
   User,
-  checkIsSuperAdmin
 } from '@/lib/user-management';
-import { supabase } from '@/lib/supabase';
 import { 
   UserCircle2, 
   Shield, 
@@ -63,7 +61,6 @@ export function UserManagement() {
   const [error, setError] = useState<string | null>(null);
   const [blockReason, setBlockReason] = useState('');
   const [actionInProgress, setActionInProgress] = useState<Record<string, boolean>>({});
-  const [isSuperAdminFromCheck, setIsSuperAdminFromCheck] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showBlockedOnly, setShowBlockedOnly] = useState(false);
   const [showAdminsOnly, setShowAdminsOnly] = useState(false);
@@ -71,22 +68,25 @@ export function UserManagement() {
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
+  // Clerk Secret Key prüfen
+  useEffect(() => {
+    if (!import.meta.env.VITE_CLERK_SECRET_KEY) {
+      setError("Clerk Secret Key fehlt. Bitte in den Umgebungsvariablen konfigurieren.");
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user) return;
 
     const fetchData = async () => {
       setLoading(true);
       try {
-        console.log("Benutzer werden abgerufen...");
+        console.log("Benutzer werden von Clerk abgerufen...");
         const users = await listUsers();
         console.log("Benutzer empfangen:", users);
         setUsers(users);
         setFilteredUsers(users);
-        
-        console.log("Superadmin-Check wird durchgeführt...");
-        const isSuperAdminCheck = await checkIsSuperAdmin();
-        console.log("Ist Superadmin:", isSuperAdminCheck);
-        setIsSuperAdminFromCheck(isSuperAdminCheck);
       } catch (error) {
         console.error("Fehler beim Laden der Daten:", error);
         setError(error.message || 'Fehler beim Laden der Benutzerdaten');
@@ -128,47 +128,16 @@ export function UserManagement() {
   const handleToggleAdmin = async (userId: string) => {
     if (actionInProgress[userId]) return;
     
-    console.log('handleToggleAdmin aufgerufen mit userId:', userId);
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
-      console.log('Rufe toggleUserRole auf...');
       
-      try {
-        await toggleUserRole(userId, 'admin');
-        console.log('toggleUserRole erfolgreich abgeschlossen');
-      } catch (toggleError) {
-        console.error('Fehler in toggleUserRole, versuche direkten Aufruf:', toggleError);
-        
-        // Direkter Aufruf als Fallback
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) throw new Error("Nicht eingeloggt");
-        
-        // Direkter Aufruf mit alternativer Aktionsbezeichnung
-        console.log('Versuche direkten Aufruf mit toggle-admin');
-        const response = await supabase.functions.invoke('manage-users', {
-          method: 'POST',
-          body: { 
-            action: 'toggle-admin',
-            targetUserId: userId,
-          },
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        console.log('Direkter Aufruf Ergebnis:', response);
-        if (response.error) throw response.error;
-      }
+      await toggleUserRole(userId, 'admin');
       
       // Benutzerliste aktualisieren
-      console.log('Aktualisiere Benutzerliste...');
       const updatedUsers = await listUsers();
       setUsers(updatedUsers);
-      console.log('Benutzerliste aktualisiert');
     } catch (err) {
-      console.error('Fehler in handleToggleAdmin:', err);
-      setError(typeof err === 'string' ? err : err.message || 'Fehler beim Verwalten der Admin-Rolle');
+      setError(err.message || 'Fehler beim Verwalten der Admin-Rolle');
     } finally {
       setActionInProgress(prev => ({ ...prev, [userId]: false }));
     }
@@ -218,9 +187,9 @@ export function UserManagement() {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
       await resetUserPassword(email);
       setIsResetDialogOpen(false);
-      alert(`Ein Passwort-Reset-Link wurde an ${email} gesendet.`);
+      alert(`Ein Anmelde-Link wurde an ${email} gesendet.`);
     } catch (err) {
-      setError(err.message || 'Fehler beim Zurücksetzen des Passworts');
+      setError(err.message || 'Fehler beim Senden des Anmelde-Links');
     } finally {
       setActionInProgress(prev => ({ ...prev, [userId]: false }));
     }
@@ -273,7 +242,7 @@ export function UserManagement() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">
             <UserCircle2 className="inline-block mr-2 h-6 w-6 text-blue-600" />
-            Benutzerverwaltung
+            Benutzerverwaltung (Clerk)
           </h1>
           
           <div className="flex flex-col md:flex-row gap-4">
@@ -373,18 +342,20 @@ export function UserManagement() {
                     
                     <div className="flex gap-1">
                       {userItem.roles.map(role => (
-                        <Badge 
-                          key={role}
-                          variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
-                        >
-                          {role === 'superadmin' ? (
-                            <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
-                          ) : role === 'admin' ? (
-                            <><Shield className="h-3 w-3 mr-1" /> Admin</>
-                          ) : (
-                            role
-                          )}
-                        </Badge>
+                        role && (
+                          <Badge 
+                            key={role}
+                            variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
+                          >
+                            {role === 'superadmin' ? (
+                              <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
+                            ) : role === 'admin' ? (
+                              <><Shield className="h-3 w-3 mr-1" /> Admin</>
+                            ) : (
+                              role
+                            )}
+                          </Badge>
+                        )
                       ))}
                     </div>
                   </div>
@@ -448,12 +419,11 @@ export function UserManagement() {
                         <DropdownMenuItem
                           onClick={() => handleToggleSuperAdmin(userItem.id)}
                           disabled={actionInProgress[userItem.id]}
-                          className={userItem.roles.includes('superadmin') ? "text-red-600" : ""}
                         >
                           {userItem.roles.includes('superadmin') ? (
-                            <><ShieldAlert className="h-3.5 w-3.5 mr-2" /> SuperAdmin entfernen</>
+                            <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-red-500" /> SuperAdmin entfernen</>
                           ) : (
-                            <><ShieldAlert className="h-3.5 w-3.5 mr-2" /> Als SuperAdmin festlegen</>
+                            <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-amber-500" /> Als SuperAdmin festlegen</>
                           )}
                         </DropdownMenuItem>
                         
@@ -479,7 +449,7 @@ export function UserManagement() {
                           }}
                           disabled={actionInProgress[userItem.id]}
                         >
-                          <RotateCcw className="h-3.5 w-3.5 mr-2" /> Passwort zurücksetzen
+                          <RotateCcw className="h-3.5 w-3.5 mr-2 text-blue-500" /> Anmelde-Link senden
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -491,45 +461,44 @@ export function UserManagement() {
         )}
       </div>
       
-      {/* Block User Dialog */}
+      {/* Block Dialog */}
       <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {userToAction?.is_blocked 
-                ? `Benutzer ${userToAction?.email} entsperren?` 
-                : `Benutzer ${userToAction?.email} sperren?`}
+              {userToAction?.is_blocked ? 'Benutzer entsperren' : 'Benutzer sperren'}
             </DialogTitle>
             <DialogDescription>
-              {userToAction?.is_blocked 
-                ? "Der Benutzer kann sich nach dem Entsperren wieder anmelden."
-                : "Der Benutzer kann sich nach dem Sperren nicht mehr anmelden."}
+              {userToAction?.is_blocked
+                ? `Möchten Sie den Benutzer "${userToAction.email}" entsperren?`
+                : `Geben Sie einen Grund an, warum Sie den Benutzer "${userToAction?.email}" sperren möchten.`
+              }
             </DialogDescription>
           </DialogHeader>
           
           {!userToAction?.is_blocked && (
-            <div className="my-4">
-              <label className="text-sm font-medium mb-2 block">Grund für die Sperrung (optional)</label>
+            <div className="py-4">
+              <label htmlFor="block-reason" className="block text-sm font-medium mb-2">
+                Sperrgrund (optional)
+              </label>
               <Input
+                id="block-reason"
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
-                placeholder="z.B. Richtlinienverstoß"
+                placeholder="z.B. Verstöße gegen Nutzungsbedingungen"
               />
             </div>
           )}
           
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsBlockDialogOpen(false)}
-            >
-              Abbrechen
-            </Button>
+            <DialogClose asChild>
+              <Button variant="outline">Abbrechen</Button>
+            </DialogClose>
             <Button 
               variant={userToAction?.is_blocked ? "default" : "destructive"}
               onClick={() => userToAction && handleToggleBlock(userToAction.id, blockReason)}
             >
-              {userToAction?.is_blocked ? "Entsperren" : "Sperren"}
+              {userToAction?.is_blocked ? 'Entsperren' : 'Sperren'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -539,23 +508,21 @@ export function UserManagement() {
       <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Passwort zurücksetzen</DialogTitle>
+            <DialogTitle>Anmelde-Link senden</DialogTitle>
             <DialogDescription>
-              Ein Passwort-Reset-Link wird an {userToAction?.email} gesendet.
+              Ein Einmal-Anmelde-Link wird an folgende E-Mail-Adresse gesendet: {userToAction?.email}
             </DialogDescription>
           </DialogHeader>
           
           <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Abbrechen</Button>
+            </DialogClose>
             <Button 
-              variant="outline" 
-              onClick={() => setIsResetDialogOpen(false)}
-            >
-              Abbrechen
-            </Button>
-            <Button 
+              variant="default"
               onClick={() => userToAction && handleResetPassword(userToAction.email, userToAction.id)}
             >
-              Reset-Link senden
+              Link senden
             </Button>
           </DialogFooter>
         </DialogContent>
