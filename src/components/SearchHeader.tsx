@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Search, X, Info } from "lucide-react";
@@ -35,11 +35,41 @@ const SearchHeader = ({
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandInputValue, setCommandInputValue] = useState("");
 
+  // Synchronisiere commandInputValue mit searchQuery, wenn das Suchfeld fokussiert wird
+  useEffect(() => {
+    if (isCommandOpen) {
+      setCommandInputValue(searchQuery);
+    }
+  }, [isCommandOpen, searchQuery]);
+
+  // Helper function to normalize ISBN (remove all non-alphanumeric characters)
+  const normalizeISBN = (isbn: string): string => {
+    return isbn.replace(/[^0-9a-zA-Z]/g, '');
+  };
+
   // Filter books for the command dialog based on input value
   const filteredSuggestions = useMemo(() => {
     if (!commandInputValue.trim()) return books;
     
     const query = commandInputValue.toLowerCase().trim();
+    const normalizedQuery = normalizeISBN(query);
+    
+    // Check if it might be an ISBN (digits with optional dashes)
+    const looksLikeISBN = /^[\d\-]+$/.test(query) && normalizedQuery.length >= 5;
+    
+    if (looksLikeISBN) {
+      // Suche nach ISBN mit oder ohne Bindestriche
+      const isbnMatches = books.filter(book => {
+        if (!book.isbn) return false;
+        const normalizedBookISBN = normalizeISBN(book.isbn);
+        return normalizedBookISBN.includes(normalizedQuery);
+      });
+      
+      if (isbnMatches.length > 0) {
+        console.log(`ISBN-Suche: ${isbnMatches.length} Bücher gefunden für "${query}"`);
+        return isbnMatches;
+      }
+    }
     
     // Check if it might be a publisher search
     const knownPublishers = ["westermann", "cornelsen", "klett", "diesterweg", "duden", "carlsen", "beltz", "raabe"];
@@ -59,6 +89,14 @@ const SearchHeader = ({
     
     // Otherwise do normal filtering for title, author, etc.
     return books.filter(book => {
+      // Spezielle Behandlung für ISBN, falls es eine teilweise ISBN-Übereinstimmung geben könnte
+      if (book.isbn) {
+        const normalizedBookISBN = normalizeISBN(book.isbn);
+        if (normalizedBookISBN.includes(normalizedQuery)) {
+          return true;
+        }
+      }
+      
       const searchableFields = [
         book.title,
         book.author,
@@ -75,12 +113,56 @@ const SearchHeader = ({
   }, [books, commandInputValue]);
 
   const handleSearch = () => {
-    onSearch(searchQuery);
+    // Nur suchen, wenn es einen Suchbegriff gibt
+    if (searchQuery.trim()) {
+      onSearch(searchQuery);
+      // CommandDialog nach der Suche schließen
+      setIsCommandOpen(false);
+    }
   };
 
   const clearSearch = () => {
     setSearchQuery("");
+    setCommandInputValue("");
     onSearch("");
+    // Optional: CommandDialog schließen
+    setIsCommandOpen(false);
+  };
+
+  // Handler für die Änderung des Hauptsuchfelds
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    // Wenn das Command-Dialog offen ist, auch den Command-Input aktualisieren
+    if (isCommandOpen) {
+      setCommandInputValue(value);
+    }
+  };
+
+  // Handler für die Änderung des Command-Inputs (innerhalb des Dropdowns)
+  const handleCommandInputChange = (value: string) => {
+    setCommandInputValue(value);
+    // Wir synchronisieren auch das Hauptsuchfeld, damit die Werte konsistent bleiben
+    setSearchQuery(value);
+  };
+
+  // Handler für das Keydown-Event im Hauptsuchfeld
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    } else if (e.key === 'Escape') {
+      setIsCommandOpen(false);
+    }
+  };
+
+  // Handler für den Wechsel des Command-Dialog-Zustands
+  const handleCommandDialogOpenChange = (open: boolean) => {
+    setIsCommandOpen(open);
+    // Wenn das Dialog geschlossen wird, synchronisiere die Werte
+    if (!open) {
+      setCommandInputValue(searchQuery);
+    }
   };
 
   return (
@@ -94,7 +176,8 @@ const SearchHeader = ({
               type="text"
               placeholder="Suche nach Titel, Autor, Verlag, Beschreibung..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchInputChange}
+              onKeyDown={handleKeyDown}
               className="pr-10"
               onFocus={() => setIsCommandOpen(true)}
             />
@@ -107,7 +190,7 @@ const SearchHeader = ({
               </button>
             )}
           </div>
-          <Button onClick={handleSearch} disabled={isLoading}>
+          <Button onClick={handleSearch} disabled={isLoading || !searchQuery.trim()}>
             <Search className="w-4 h-4 mr-2" />
             Suchen
           </Button>
@@ -133,44 +216,53 @@ const SearchHeader = ({
           </TooltipProvider>
         </div>
 
-        <CommandDialog open={isCommandOpen} onOpenChange={setIsCommandOpen}>
-          <Command>
+        <CommandDialog open={isCommandOpen} onOpenChange={handleCommandDialogOpenChange}>
+          <Command shouldFilter={false}>
             <CommandInput 
               placeholder="Type to search..." 
               value={commandInputValue}
-              onValueChange={setCommandInputValue}
+              onValueChange={handleCommandInputChange}
             />
             <CommandList>
-              <CommandEmpty>Keine Ergebnisse gefunden.</CommandEmpty>
-              <CommandGroup heading="Bücher">
-                {filteredSuggestions.map((book) => {
-                  const selectBook = () => {
-                    setSearchQuery(book.title);
-                    setIsCommandOpen(false);
-                    onSearch(book.title);
-                  };
-                  
-                  return (
-                    <div 
-                      key={book.id}
-                      className="cursor-pointer w-full hover:bg-gray-100 px-2 py-2"
-                      onClick={selectBook}
-                    >
-                      <CommandItem
-                        onSelect={selectBook}
-                        className="pointer-events-none"
+              <CommandEmpty>
+                <div className="py-6 text-center">
+                  <p>Keine Ergebnisse gefunden.</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Versuchen Sie einen anderen Suchbegriff oder korrigieren Sie Ihre Eingabe.
+                  </p>
+                </div>
+              </CommandEmpty>
+              {filteredSuggestions.length > 0 && (
+                <CommandGroup heading="Bücher">
+                  {filteredSuggestions.map((book) => {
+                    const selectBook = () => {
+                      setSearchQuery(book.title);
+                      setIsCommandOpen(false);
+                      onSearch(book.title);
+                    };
+                    
+                    return (
+                      <div 
+                        key={book.id}
+                        className="cursor-pointer w-full hover:bg-gray-100 px-2 py-2"
+                        onClick={selectBook}
                       >
-                        <div className="flex flex-col w-full">
-                          <span>{book.title}</span>
-                          <span className="text-sm text-gray-500">
-                            {book.author} • {book.publisher ? `${book.publisher} • ` : ""}{book.subject} • {book.level}
-                          </span>
-                        </div>
-                      </CommandItem>
-                    </div>
-                  );
-                })}
-              </CommandGroup>
+                        <CommandItem
+                          onSelect={selectBook}
+                          className="pointer-events-none"
+                        >
+                          <div className="flex flex-col w-full">
+                            <span>{book.title}</span>
+                            <span className="text-sm text-gray-500">
+                              {book.author} • {book.publisher ? `${book.publisher} • ` : ""}{book.subject} • {book.level}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      </div>
+                    );
+                  })}
+                </CommandGroup>
+              )}
             </CommandList>
           </Command>
         </CommandDialog>

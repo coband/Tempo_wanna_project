@@ -88,6 +88,30 @@ const BookManagement = ({
       const query = searchQuery.toLowerCase().trim();
       console.log("Suche nach:", query);
       
+      // Hilfsfunktion zur Normalisierung von ISBN (Entfernung aller Nicht-Alphanumerischen Zeichen)
+      const normalizeISBN = (isbn: string): string => {
+        return isbn.replace(/[^0-9a-zA-Z]/g, '');
+      };
+      
+      const normalizedQuery = normalizeISBN(query);
+      
+      // Prüfe, ob es sich um eine ISBN-Suche handeln könnte (Ziffern mit optionalen Bindestrichen)
+      const looksLikeISBN = /^[\d\-]+$/.test(query) && normalizedQuery.length >= 5;
+      
+      if (looksLikeISBN) {
+        // Spezielle ISBN-Suche
+        const isbnMatches = result.filter(book => {
+          if (!book.isbn) return false;
+          const normalizedBookISBN = normalizeISBN(book.isbn);
+          return normalizedBookISBN.includes(normalizedQuery);
+        });
+        
+        if (isbnMatches.length > 0) {
+          console.log(`ISBN-Suche: ${isbnMatches.length} Bücher gefunden für "${query}"`);
+          return setFilteredBooks(isbnMatches);
+        }
+      }
+      
       // Erste Prüfung: Könnte es sich um einen Verlagsnamen handeln?
       // Liste häufiger deutscher Verlage
       const knownPublishers = ["westermann", "cornelsen", "klett", "diesterweg", "duden", "carlsen", "beltz", "raabe"];
@@ -113,44 +137,49 @@ const BookManagement = ({
         let found = false;
         let matchField = "";
         
+        // Spezielle Behandlung für ISBN mit Normalisierung
+        if (book.isbn) {
+          const normalizedBookISBN = normalizeISBN(book.isbn);
+          if (normalizedBookISBN.includes(normalizedQuery)) {
+            found = true;
+            matchField = "ISBN: " + book.isbn;
+          }
+        }
+        
         // Einzelne Felder-Prüfung
-        if (book.title && book.title.toLowerCase().includes(query)) {
+        if (!found && book.title && book.title.toLowerCase().includes(query)) {
           found = true;
           matchField = "Titel: " + book.title;
         }
-        else if (book.author && book.author.toLowerCase().includes(query)) {
+        else if (!found && book.author && book.author.toLowerCase().includes(query)) {
           found = true;
           matchField = "Autor: " + book.author;
         }
-        else if (book.publisher && book.publisher.toLowerCase().includes(query)) {
+        else if (!found && book.publisher && book.publisher.toLowerCase().includes(query)) {
           found = true;
           matchField = "Verlag: " + book.publisher;
         }
-        else if (book.description && book.description.toLowerCase().includes(query)) {
+        else if (!found && book.description && book.description.toLowerCase().includes(query)) {
           found = true;
           matchField = "Beschreibung: " + book.description.substring(0, 50) + "...";
         }
-        else if (book.subject && book.subject.toLowerCase().includes(query)) {
+        else if (!found && book.subject && book.subject.toLowerCase().includes(query)) {
           found = true;
           matchField = "Fach: " + book.subject;
         }
-        else if (book.type && book.type.toLowerCase().includes(query)) {
+        else if (!found && book.type && book.type.toLowerCase().includes(query)) {
           found = true;
           matchField = "Typ: " + book.type;
         }
-        else if (book.isbn && book.isbn.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "ISBN: " + book.isbn;
-        }
-        else if (book.level && book.level.toLowerCase().includes(query)) {
+        else if (!found && book.level && book.level.toLowerCase().includes(query)) {
           found = true;
           matchField = "Stufe: " + book.level;
         }
-        else if (book.school && book.school.toLowerCase().includes(query)) {
+        else if (!found && book.school && book.school.toLowerCase().includes(query)) {
           found = true;
           matchField = "Schule: " + book.school;
         }
-        else if (book.location && book.location.toLowerCase().includes(query)) {
+        else if (!found && book.location && book.location.toLowerCase().includes(query)) {
           found = true;
           matchField = "Standort: " + book.location;
         }
