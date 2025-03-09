@@ -27,6 +27,28 @@ const AdminRoute = ({ children, requireSuperAdmin = false }: { children: React.R
   return <ProtectedRoute>{children}</ProtectedRoute>;
 };
 
+// Zentrierte Anmeldekomponente
+const CenteredSignIn = () => {
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md">
+        <SignIn routing="path" path="/sign-in" />
+      </div>
+    </div>
+  );
+};
+
+// Zentrierte Registrierungskomponente
+const CenteredSignUp = () => {
+  return (
+    <div className="flex min-h-screen w-full items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md">
+        <SignUp routing="path" path="/sign-up" />
+      </div>
+    </div>
+  );
+};
+
 function App() {
   return (
     <Suspense fallback={<p>Loading...</p>}>
@@ -35,9 +57,9 @@ function App() {
 
       <Routes>
         <Route path="/" element={<Home />} />
-        {/* Clerk Auth Routen */}
-        <Route path="/sign-in/*" element={<SignIn routing="path" path="/sign-in" />} />
-        <Route path="/sign-up/*" element={<SignUp routing="path" path="/sign-up" />} />
+        {/* Clerk Auth Routen mit zentrierten Komponenten */}
+        <Route path="/sign-in/*" element={<CenteredSignIn />} />
+        <Route path="/sign-up/*" element={<CenteredSignUp />} />
         <Route
           path="/dashboard"
           element={
