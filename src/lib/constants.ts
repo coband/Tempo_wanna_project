@@ -19,6 +19,9 @@ export const SUBJECTS = [
   "Sport",
   "TTG",
   "Divers",
+  "Medien und Informatik",
+  "Deutsch als Zweitsprache (DaZ)",
+  "Förderung (IF)"
 ];
 
 export const BOOK_TYPES = [
