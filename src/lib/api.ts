@@ -2,23 +2,19 @@ import { supabase } from "./supabase";
 
 export async function fetchBookInfo(isbn: string) {
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-
-    if (!accessToken) {
-      throw new Error("No access token available");
-    }
-    
     // URL für Edge-Funktionen aus Umgebungsvariablen
     const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
       '';
 
+    if (!functionsUrl) {
+      throw new Error("Supabase URL is not configured");
+    }
+
     const response = await fetch(`${functionsUrl}/book-info`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ isbn, preview: true }), // Wir verwenden den Preview-Modus
     });

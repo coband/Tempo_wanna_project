@@ -40,13 +40,14 @@ export async function getBooks() {
 }
 
 export async function createBook(book: NewBook) {
-  // Check if exact ISBN already exists
+  // Überprüfen, ob ein Buch mit dieser ISBN bereits existiert
   const { data: existingBooks } = await supabase
     .from("books")
-    .select()
-    .eq("isbn", book.isbn.trim());
-
-  if (existingBooks && existingBooks.length > 0) {
+    .select("id, isbn")
+    .eq("isbn", book.isbn.trim())
+    .maybeSingle();
+  
+  if (existingBooks) {
     throw new Error("Ein Buch mit dieser ISBN existiert bereits.");
   }
 
@@ -71,24 +72,19 @@ export async function createBook(book: NewBook) {
   // Starte die Embedding-Generierung für das neue Buch
   if (insertedBook) {
     try {
-      // Rufe die createEmbeddings-Funktion auf, wie beim Massenimport
+      // URL für Edge-Funktionen aus Umgebungsvariablen
       const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
         '';
       
-      // Holen des API-Schlüssels
-      const { data: authData } = await supabase.auth.getSession();
-      const accessToken = authData.session?.access_token;
-        
-      if (functionsUrl && accessToken) {
+      if (functionsUrl) {
         console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
         
-        // Asynchron die createEmbeddings-Funktion aufrufen
+        // Asynchron die createEmbeddings-Funktion aufrufen - keine Authentifizierung notwendig
         fetch(`${functionsUrl}/createEmbeddings`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             bookIds: [insertedBook.id]
@@ -97,7 +93,7 @@ export async function createBook(book: NewBook) {
           console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
         });
       } else {
-        console.warn("Konnte createEmbeddings nicht aufrufen: URL oder Token fehlt");
+        console.warn("Konnte createEmbeddings nicht aufrufen: URL fehlt");
       }
     } catch (embedError) {
       console.error("Fehler bei der Embedding-Erstellung:", embedError);
@@ -113,24 +109,19 @@ export async function updateBook(id: string, book: Partial<Book>) {
   
   // Embedding nach der Aktualisierung neu generieren
   try {
-    // Rufe die createEmbeddings-Funktion auf
+    // URL für Edge-Funktionen aus Umgebungsvariablen
     const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
       '';
     
-    // Holen des API-Schlüssels
-    const { data: authData } = await supabase.auth.getSession();
-    const accessToken = authData.session?.access_token;
-      
-    if (functionsUrl && accessToken) {
+    if (functionsUrl) {
       console.log(`Aktualisiere Embedding für Buch ${id}`);
       
-      // Asynchron die createEmbeddings-Funktion aufrufen
+      // Asynchron die createEmbeddings-Funktion aufrufen - keine Authentifizierung mehr notwendig
       fetch(`${functionsUrl}/createEmbeddings`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           bookIds: [id]
@@ -139,11 +130,11 @@ export async function updateBook(id: string, book: Partial<Book>) {
         console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
       });
     } else {
-      console.warn("Konnte createEmbeddings nicht aufrufen: URL oder Token fehlt");
+      console.warn("Konnte createEmbeddings nicht aufrufen: URL fehlt");
     }
   } catch (embedError) {
     console.error("Fehler bei der Embedding-Aktualisierung:", embedError);
-    // Wir werfen keinen Fehler, da das Buch bereits aktualisiert wurde
+    // Werfen wir keinen Fehler, da das Buch bereits aktualisiert wurde
   }
 }
 

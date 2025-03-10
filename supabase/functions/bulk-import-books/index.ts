@@ -25,43 +25,76 @@ serve(async (req) => {
       throw new Error('Serverkonfiguration unvollständig');
     }
 
-    // Authentifizierung des Benutzers
+    // Authentifizierung des Benutzers - wir prüfen sowohl Supabase als auch Clerk-Token
     const authHeader = req.headers.get('Authorization') || '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    let userId = null;
+    let isAdmin = false; // Standard: Benutzer ist kein Admin
     
-    if (userError || !user) {
-      console.error('Autorisierungsfehler:', userError);
+    // Wenn ein Authentifizierungs-Header vorhanden ist, versuchen wir zu authentifizieren
+    if (authHeader) {
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        
+        // 1. Versuche es als Supabase-Token (falls es ein Legacy-Token ist)
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data: supabaseAuth, error: supabaseError } = await supabase.auth.getUser(token);
+        
+        if (!supabaseError && supabaseAuth?.user) {
+          userId = supabaseAuth.user.id;
+          console.log('Benutzer über Supabase authentifiziert:', userId);
+          isAdmin = true; // Alle alten Supabase-Benutzer als Admins betrachten
+        } else {
+          // 2. Es könnte ein Clerk-Token sein - versuche es zu dekodieren
+          try {
+            // JWT-Token dekodieren (header.payload.signature)
+            const tokenParts = token.split('.');
+            if (tokenParts.length === 3) {
+              // Base64-decodieren und JSON parsen
+              const payload = JSON.parse(
+                new TextDecoder().decode(
+                  Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
+                )
+              );
+              
+              // Clerk-spezifische Felder prüfen
+              if (payload.sub) {
+                userId = payload.sub;
+                
+                // Rolle aus den Metadaten ermitteln
+                const userRole = payload.user_role || 
+                                (payload.user_metadata && payload.user_metadata.user_role);
+                
+                isAdmin = userRole === 'admin' || userRole === 'superadmin';
+                
+                console.log(`Clerk-Benutzer ${userId} identifiziert mit Rolle: ${userRole}`);
+              }
+            }
+          } catch (jwtError) {
+            console.error('Fehler beim Dekodieren des JWT:', jwtError);
+          }
+        }
+      } catch (error) {
+        console.error('Fehler bei der Authentifizierung:', error);
+      }
+    }
+    
+    if (!userId) {
+      console.error('Benutzer konnte nicht authentifiziert werden');
       return new Response(
         JSON.stringify({ error: 'Nicht autorisiert' }), 
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    console.log(`Benutzer authentifiziert: ${user.id}`);
-    
-    // Überprüfen ob Benutzer Admin oder Superadmin ist
-    const { data: roles, error: rolesError } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', user.id);
-    
-    if (rolesError) {
-      console.error('Fehler beim Abrufen der Benutzerrollen:', rolesError);
-      throw new Error('Fehler beim Überprüfen der Benutzerberechtigungen');
-    }
-    
-    const isAdmin = roles?.some(r => r.role === 'admin' || r.role === 'superadmin');
-    
     if (!isAdmin) {
-      console.error(`Benutzer ${user.id} ist kein Admin`);
+      console.error(`Benutzer ${userId} ist kein Admin`);
       return new Response(
         JSON.stringify({ error: 'Verboten - Admin-Rechte erforderlich' }), 
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    console.log(`Admin-Berechtigung bestätigt für Benutzer: ${user.id}`);
+    console.log(`Admin-Berechtigung bestätigt für Benutzer: ${userId}`);
     
     // Request-Body parsen
     const requestData = await req.json();

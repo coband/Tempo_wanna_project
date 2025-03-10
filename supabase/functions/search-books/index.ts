@@ -26,36 +26,31 @@ serve(async (req) => {
       throw new Error('Supabase URL oder Service Key nicht konfiguriert');
     }
 
-    // JWT Token aus dem Authorization Header extrahieren
+    // JWT Token aus dem Authorization Header extrahieren (optional)
+    let userId = "anonymous"; // Standard-User-ID für nicht authentifizierte Anfragen
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Authorization Header fehlt' }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 401,
-        }
-      );
-    }
-
-    // JWT Token extrahieren und Benutzer überprüfen
-    const token = authHeader.replace('Bearer ', '');
-    const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-
-    if (userError) {
-      console.error('JWT-Validierungsfehler:', userError);
-      return new Response(
-        JSON.stringify({ error: 'Ungültiger JWT Token', details: userError.message }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 401,
-        }
-      );
-    }
-
-    console.log('Benutzer erfolgreich authentifiziert:', userData.user.id);
     
+    if (authHeader) {
+      try {
+        // Versuchen, das Token zu validieren, aber keinen Fehler werfen, wenn es fehlschlägt
+        const token = authHeader.replace("Bearer ", "");
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+        const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
+        
+        if (!userError && userData?.user?.id) {
+          userId = userData.user.id;
+          console.log("Benutzer erfolgreich authentifiziert:", userId);
+        } else {
+          console.log("Token-Validierung fehlgeschlagen, setze auf anonymen Benutzer");
+        }
+      } catch (authError) {
+        console.error("Fehler bei der Authentifizierung:", authError);
+        // Fahre trotzdem fort, auch wenn die Authentifizierung fehlschlägt
+      }
+    } else {
+      console.log("Kein Authorization Header vorhanden, setze auf anonymen Benutzer");
+    }
+
     // Suchparameter aus dem Request-Body holen
     if (!req.body) {
       return new Response(

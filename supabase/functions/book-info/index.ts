@@ -23,35 +23,32 @@ serve(async (req) => {
   }
 
   try {
-    // JWT Token aus dem Authorization Header extrahieren
+    // Standard-Benutzer-ID für anonyme Anfragen
+    let userId = "anonymous";
+    
+    // JWT Token aus dem Authorization Header extrahieren (optional)
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Authorization Header fehlt" }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 401,
+    
+    if (authHeader) {
+      try {
+        // Token extrahieren und Benutzer überprüfen, aber keinen Fehler werfen, wenn es fehlschlägt
+        const token = authHeader.replace("Bearer ", "");
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
+        
+        if (!userError && userData?.user?.id) {
+          userId = userData.user.id;
+          console.log("Benutzer erfolgreich authentifiziert:", userId);
+        } else {
+          console.log("Token-Validierung fehlgeschlagen, setze auf anonymen Benutzer");
         }
-      );
+      } catch (authError) {
+        console.error("Fehler bei der Authentifizierung:", authError);
+        // Fahre trotzdem fort, auch wenn die Authentifizierung fehlschlägt
+      }
+    } else {
+      console.log("Kein Authorization Header vorhanden, setze auf anonymen Benutzer");
     }
-
-    // JWT Token extrahieren und Benutzer überprüfen
-    const token = authHeader.replace("Bearer ", "");
-    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-
-    if (userError) {
-      console.error("JWT-Validierungsfehler:", userError);
-      return new Response(
-        JSON.stringify({ error: "Ungültiger JWT Token", details: userError.message }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 401,
-        }
-      );
-    }
-
-    console.log("Benutzer erfolgreich authentifiziert:", userData.user.id);
     
     const requestBody = await req.json();
     const { isbn, preview } = requestBody;
@@ -69,7 +66,7 @@ serve(async (req) => {
     }
 
     // Überprüfen, ob das Buch bereits in der Datenbank existiert
-    const { data: existingBook } = await supabaseClient
+    const { data: existingBook } = await createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       .from("books")
       .select("*")
       .eq("isbn", isbn)
@@ -219,7 +216,7 @@ serve(async (req) => {
     // Das Buch in die Datenbank einfügen
     const bookEntry = {
       ...formattedBookData,
-      user_id: userData.user.id,
+      user_id: userId,
       created_at: new Date().toISOString(),
       available: true, // Standard: verfügbar
       location: 'Schule', // Standardstandort

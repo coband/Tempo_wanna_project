@@ -13,6 +13,13 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!
 // Konfiguration für Batch-Verarbeitung
 const BATCH_SIZE = 25 // Anzahl der Bücher, die pro Batch verarbeitet werden (reduziert, da axios verwendet wird)
 
+// CORS Headers für die Antwort
+const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
 // Funktion zur Vorbereitung des vector_source aus Buchdaten
 function prepareVectorSource(book: any): string {
     try {
@@ -38,13 +45,7 @@ function prepareVectorSource(book: any): string {
 serve(async (req) => {
     // CORS Preflight-Anfrage behandeln
     if (req.method === "OPTIONS") {
-        return new Response("ok", {
-            headers: {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "POST, GET",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            },
-        })
+        return new Response("ok", { headers: corsHeaders })
     }
 
     // Parameter aus der Anfrage extrahieren
