@@ -1,125 +1,126 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
 import SearchHeader from "../SearchHeader";
 import BookGrid from "../BookGrid";
 import { DashboardHeader } from "./DashboardHeader";
 import type { Book } from "@/lib/books";
 import { ChatButton } from "../books/ChatButton";
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { X } from "lucide-react";
 
 interface BookManagementProps {
   initialSearchQuery?: string;
 }
 
+// Füge die API_ENDPOINT-Definition hinzu
+const API_ENDPOINT = import.meta.env.VITE_SUPABASE_URL 
+  ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` 
+  : '';
+
 const BookManagement = ({
   initialSearchQuery = "",
 }: BookManagementProps) => {
-  const { authClient, loading: clientLoading } = useSupabaseAuth();
+  const { supabase, loading: clientLoading, handleRequest } = useSupabaseAuth();
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [allBooks, setAllBooks] = useState<Book[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
+  const [isFiltered, setIsFiltered] = useState(false);
 
   // Normalisierung der ISBN (entfernt Nicht-Alphanumerische Zeichen)
   const normalizeISBN = (isbn: string) => {
     return isbn.replace(/[^a-zA-Z0-9]/g, '');
   };
 
-  // Fetch books
-  const fetchBooks = useCallback(async () => {
+  // Vereinfachte fetchBooks-Funktion, die direkt supabase verwendet
+  const fetchBooks = async (searchTerm?: string) => {
+    setLoading(true);
+    setLoadingError(null);
+    
     try {
-      setLoading(true);
-      setLoadingError(null);
-
-      console.log("Fetching books with searchTerm:", searchQuery);
-      let result;
-
-      if (searchQuery.trim()) {
-        // Prüfen, ob die Suche eine ISBN sein könnte (enthält nur Ziffern und Bindestriche)
-        const isISBNSearch = /^[\d\-]+$/.test(searchQuery);
-        console.log("Is ISBN search:", isISBNSearch);
-        
-        // Komplexe Suche mit Edge-Funktion durchführen
-        const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
-          '';
-          
-        if (!functionsUrl) {
-          throw new Error("Supabase URL nicht konfiguriert");
-        }
-
-        // Rufe die semantische Suchfunktion auf
-        const response = await fetch(`${functionsUrl}/search-books`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ 
-            query: searchQuery,
-            isbnSearch: isISBNSearch
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Fehler bei der Suche: ${response.statusText}`);
-        }
-        
-        const searchResult = await response.json();
-        console.log("Search results:", searchResult);
-        result = searchResult?.books || [];
-      } else {
-        // Standard-Bücherliste abrufen
-        // Verwende den authentifizierten Client anstelle des supabase-Imports
-        const { data, error } = await authClient
+      console.log("Fetching books...");
+      
+      // Standard-Abfrage
+      if (!searchTerm) {
+        const { data, error } = await supabase
           .from("books")
           .select("*")
           .order("created_at", { ascending: false });
 
-        if (error) throw error;
-        result = data || [];
-      }
+        if (error) {
+          console.error("Error fetching books:", error);
+          setLoadingError(error.message);
+          return;
+        }
 
-      console.log(`Found ${result.length} books`);
-      setAllBooks(result);
-      setFilteredBooks(result);
+        console.log(`Found ${data?.length || 0} books`);
+        setAllBooks(data || []);
+        setFilteredBooks(data || []);
+        return;
+      }
+      
+      // Mit Suchbegriff
+      // Prüfen, ob die Suche eine ISBN sein könnte (enthält nur Ziffern und Bindestriche)
+      const isISBNSearch = /^[\d\-]+$/.test(searchTerm);
+      console.log("Is ISBN search:", isISBNSearch);
+      
+      // Verwende supabase.functions.invoke statt direktem fetch
+      const { data: searchResult, error: searchError } = await supabase.functions.invoke('search-books', {
+        body: { 
+          query: searchTerm,
+          isbnSearch: isISBNSearch
+        }
+      });
+      
+      if (searchError) {
+        throw new Error(`Search API error: ${searchError.message}`);
+      }
+      
+      console.log("Search results:", searchResult);
+      
+      const results = searchResult?.books || [];
+      setAllBooks(results);
+      setFilteredBooks(results);
     } catch (error) {
       console.error("Error fetching books:", error);
-      setLoadingError("Fehler beim Laden der Bücher");
+      setLoadingError('Ein Fehler ist beim Laden der Bücher aufgetreten.');
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, authClient]);
+  };
 
   // Aktualisiere useEffect, um nur zu laden, wenn der Client nicht mehr lädt
   useEffect(() => {
-    if (!clientLoading) {
-      fetchBooks();
-      
-      // Set up realtime subscription
-      const channel = authClient
-        .channel("books_db_changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "books",
-          },
-          (payload) => {
-            console.log("Realtime update received:", payload);
-            fetchBooks();
-          },
-        )
-        .subscribe((status) => {
-          console.log("Subscription status:", status);
-        });
-
-      return () => {
-        authClient.removeChannel(channel);
-      };
-    }
-  }, [fetchBooks, clientLoading, authClient]);
+    if (clientLoading) return;
+    
+    // Bücher laden
+    fetchBooks(searchQuery);
+    
+    // Echtzeit-Abonnement für Änderungen an Büchern
+    const channel = supabase
+      .channel('bookChanges')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'books',
+        },
+        (payload) => {
+          console.log('Realtime change:', payload);
+          // Lade Bücher neu bei Änderungen
+          fetchBooks(searchQuery);
+        }
+      )
+      .subscribe((status) => {
+        console.log('Subscription status:', status);
+      });
+    
+    return () => {
+      // Aufräumen
+      supabase.removeChannel(channel);
+    };
+  }, [searchQuery, supabase, clientLoading]);
 
   // Apply search filter
   useEffect(() => {
@@ -243,6 +244,20 @@ const BookManagement = ({
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
+    
+    // Wenn die Suche gelöscht/zurückgesetzt wird, lade alle Bücher neu
+    if (!query.trim()) {
+      setIsFiltered(false);
+      fetchBooks();
+    } else {
+      setIsFiltered(true);
+    }
+  };
+
+  const resetSearch = () => {
+    setSearchQuery('');
+    setIsFiltered(false);
+    fetchBooks();
   };
 
   if (loading) {
@@ -260,17 +275,40 @@ const BookManagement = ({
       <div className="flex flex-col">
         <SearchHeader
           onSearch={handleSearch}
-          initialValue={searchQuery}
+          books={filteredBooks}
+          isLoading={loading}
+          currentQuery={searchQuery}
         />
+
+        {/* Filter-Indikator */}
+        {isFiltered && (
+          <div className="bg-blue-50 px-4 py-2 flex items-center justify-between">
+            <div className="text-sm text-blue-700">
+              {filteredBooks.length === 1 
+                ? "1 Buch gefunden für" 
+                : `${filteredBooks.length} Bücher gefunden für`}: "{searchQuery}"
+            </div>
+            <button
+              onClick={resetSearch}
+              className="text-sm text-blue-700 hover:text-blue-900 font-medium flex items-center"
+            >
+              <X className="w-4 h-4 mr-1" />
+              Zurücksetzen und alle Bücher anzeigen
+            </button>
+          </div>
+        )}
 
         {/* Main content */}
         <main className="flex-1">
           <div className="w-full px-2 sm:px-4">
+            {loadingError && (
+              <div className="p-4 mb-4 text-red-800 bg-red-100 rounded-md">
+                {loadingError}
+              </div>
+            )}
             <BookGrid
               books={filteredBooks}
-              loading={loading}
               onBookChange={fetchBooks}
-              error={loadingError}
             />
           </div>
         </main>

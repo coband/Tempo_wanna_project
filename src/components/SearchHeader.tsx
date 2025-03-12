@@ -23,6 +23,7 @@ interface SearchHeaderProps {
   onSearch?: (query: string) => void;
   books?: any[];
   isLoading?: boolean;
+  currentQuery?: string;
 }
 
 const SearchHeader = ({
@@ -30,10 +31,16 @@ const SearchHeader = ({
   onSearch = () => {},
   books = [],
   isLoading = false,
+  currentQuery = "",
 }: SearchHeaderProps) => {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(currentQuery);
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandInputValue, setCommandInputValue] = useState("");
+
+  // Aktualisiere searchQuery, wenn sich currentQuery ändert
+  useEffect(() => {
+    setSearchQuery(currentQuery);
+  }, [currentQuery]);
 
   // Synchronisiere commandInputValue mit searchQuery, wenn das Suchfeld fokussiert wird
   useEffect(() => {

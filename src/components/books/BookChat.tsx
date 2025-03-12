@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -99,6 +99,8 @@ const loadChatHistory = (): ChatSession[] => {
 };
 
 export function BookChat({ open, onOpenChange }: BookChatProps) {
+  // Authentifizierten Supabase-Client vom Hook beziehen
+  const { supabase } = useSupabaseAuth();
   // Standardnachricht für den Assistenten
   const defaultMessage = {
     type: 'assistant' as const,
@@ -279,20 +281,9 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       
       console.log('Rufe Edge-Funktion search-books auf...');
       
-      // Session abrufen, um das Access Token zu bekommen
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData?.session;
-      
-      if (!session) {
-        console.log('Keine aktive Sitzung gefunden, verwende anonymen Zugriff');
-      }
-      
       // Edge Function mit JWT Token aufrufen
       const response = await supabase.functions.invoke('search-books', {
         body: { query: userMessage.content },
-        headers: session ? {
-          Authorization: `Bearer ${session.access_token}`
-        } : undefined
       });
       
       console.log('Edge-Funktion Antwort:', response);

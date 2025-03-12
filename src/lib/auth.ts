@@ -33,25 +33,24 @@ export const AuthContext = createContext<AuthContextType>(
   {} as AuthContextType,
 );
 
-// Hook für den Zugriff auf Clerk-Authentifizierungsdaten
+/**
+ * Hook für den Zugriff auf Clerk-Authentifizierungsdaten
+ * Vereinfacht den Zugriff auf Benutzerinformationen und Rollen
+ */
 export function useAuth() {
   const { isLoaded, userId, sessionId } = useClerkAuth();
   const { user, isLoaded: isUserLoaded } = useUser();
   
-  // Hier könnte man zusätzliche Logik hinzufügen, um Benutzerrollen zu ermitteln
-  // Zum Beispiel basierend auf Clerk Public Metadata
+  // Benutzerrollen aus den Clerk Public Metadata extrahieren
   const isAdmin = user?.publicMetadata?.role === 'admin' || user?.publicMetadata?.role === 'superadmin';
   const isSuperAdmin = user?.publicMetadata?.role === 'superadmin';
   
   return {
-    user: user,
+    user,
     loading: !isLoaded || !isUserLoaded,
     isAdmin,
     isSuperAdmin,
-    // Diese sind Platzhalter und nicht mehr nötig, da Clerk seine eigenen 
-    // Komponenten für diese Aktionen bereitstellt
-    signIn: async () => ({ user: null }),
-    signUp: async () => ({ user: null }),
-    signOut: async () => { /* Platzhalter */ }
+    userId,
+    isAuthenticated: !!userId
   };
 }

@@ -11,7 +11,8 @@ import {
 } from "./ui/tooltip";
 import { Button } from "./ui/button";
 import { BookForm } from "./books/BookForm";
-import { Book, createBook, updateBook, deleteBook } from "@/lib/books";
+import { Book, NewBook, BookUpdate } from "@/lib/books";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useToast } from "./ui/use-toast";
 import { BookFilter } from "./books/BookFilter";
 import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS, LOCATIONS, YEAR_RANGE } from "@/lib/constants";
@@ -32,8 +33,19 @@ interface BookGridProps {
   onBookChange?: () => void;
 }
 
+interface FilterValues {
+  level: string[];
+  school: string;
+  type: string;
+  subject: string[];
+  year: [number, number];
+  available: boolean | null;
+  location: string;
+}
+
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
+  const { supabase } = useSupabaseAuth();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -43,123 +55,191 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   
   // Filter-States
   const [filteredBooks, setFilteredBooks] = useState<Book[]>(books);
-  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
-  const [selectedSchool, setSelectedSchool] = useState("");
-  const [selectedType, setSelectedType] = useState("");
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [selectedYearRange, setSelectedYearRange] = useState<[number, number]>(YEAR_RANGE);
-  const [selectedAvailability, setSelectedAvailability] = useState<boolean | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState("");
-  
-  // Bücher filtern, wenn sich Filter oder Bücher ändern
-  useEffect(() => {
-    let result = [...books];
-    
-    // Nach Klassenstufe filtern
-    if (selectedLevels.length > 0) {
-      result = result.filter(book => {
-        // Wir teilen den level-String an Kommas, um alle Stufen zu erhalten
-        const bookLevels = book.level?.split(', ') || [];
-        // Wir prüfen, ob mindestens eine der ausgewählten Stufen im Buch vorkommt
-        return selectedLevels.some(level => bookLevels.includes(level));
-      });
-    }
-    
-    // Nach Schulhaus filtern
-    if (selectedSchool) {
-      result = result.filter(book => book.school === selectedSchool);
-    }
-    
-    // Nach Buchtyp filtern
-    if (selectedType) {
-      result = result.filter(book => book.type === selectedType);
-    }
-    
-    // Nach Fach filtern
-    if (selectedSubjects.length > 0) {
-      result = result.filter(book => selectedSubjects.includes(book.subject));
-    }
-    
-    // Nach Erscheinungsjahr filtern
-    result = result.filter(book => {
-      const year = book.year;
-      return year >= selectedYearRange[0] && year <= selectedYearRange[1];
-    });
-    
-    // Nach Verfügbarkeit filtern
-    if (selectedAvailability !== null) {
-      result = result.filter(book => book.available === selectedAvailability);
-    }
-    
-    // Nach Standort filtern
-    if (selectedLocation) {
-      result = result.filter(book => book.location === selectedLocation);
-    }
-    
-    setFilteredBooks(result);
-  }, [
-    books, 
-    selectedLevels, 
-    selectedSchool, 
-    selectedType,
-    selectedSubjects,
-    selectedYearRange,
-    selectedAvailability,
-    selectedLocation
-  ]);
+  const [activeFilters, setActiveFilters] = useState<Partial<FilterValues>>({
+    available: null
+  });
 
-  // Filter zurücksetzen
-  const clearFilters = () => {
-    setSelectedLevels([]);
-    setSelectedSchool("");
-    setSelectedType("");
-    setSelectedSubjects([]);
-    setSelectedYearRange(YEAR_RANGE);
-    setSelectedAvailability(null);
-    setSelectedLocation("");
+  // Filter books when books array or filters change
+  useEffect(() => {
+    filterBooks(books, activeFilters);
+  }, [books, activeFilters]);
+
+  const filterBooks = (books: Book[], filters: Partial<FilterValues>) => {
+    // If no filters are active, show all books
+    if (Object.keys(filters).length === 0) {
+      setFilteredBooks(books);
+      return;
+    }
+
+    // Apply filters
+    const filtered = books.filter((book) => {
+      // For each filter category
+      if (filters.level && filters.level.length > 0) {
+        const bookLevels = book.level?.split(', ') || [];
+        if (!filters.level.some(level => bookLevels.includes(level))) {
+          return false;
+        }
+      }
+
+      if (filters.school && book.school !== filters.school) {
+        return false;
+      }
+
+      if (filters.type && book.type !== filters.type) {
+        return false;
+      }
+
+      if (filters.subject && filters.subject.length > 0) {
+        if (!filters.subject.includes(book.subject)) {
+          return false;
+        }
+      }
+
+      if (filters.year) {
+        const [min, max] = filters.year;
+        if (book.year < min || book.year > max) {
+          return false;
+        }
+      }
+
+      if (filters.available !== null && filters.available !== undefined) {
+        if (book.available !== filters.available) {
+          return false;
+        }
+      }
+
+      if (filters.location && book.location !== filters.location) {
+        return false;
+      }
+
+      return true;
+    });
+
+    setFilteredBooks(filtered);
   };
-  
-  const handleAdd = async (book: Omit<Book, "id">) => {
+
+  const handleFilterChange = (category: keyof FilterValues, value: any) => {
+    setActiveFilters((prev) => ({
+      ...prev,
+      [category]: value
+    }));
+  };
+
+  const handleAdd = async (book: NewBook) => {
     try {
-      await createBook(book);
+      // Verwende den authentifizierten Client
+      const { data, error } = await supabase
+        .from("books")
+        .insert(book)
+        .select();
+      
+      if (error) throw error;
+      
+      // Wenn ein Embedding erstellt werden soll, rufe die Edge-Funktion auf
+      if (data && data.length > 0) {
+        const newBookId = data[0].id;
+        
+        try {
+          const functionsUrl = import.meta.env.VITE_SUPABASE_URL 
+            ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` 
+            : '';
+          
+          if (functionsUrl) {
+            // Versuche, das Embedding asynchron zu erstellen
+            fetch(`${functionsUrl}/create-book-embedding`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                bookId: newBookId,
+                bookData: { ...book, id: newBookId }
+              })
+            }).catch(err => {
+              console.warn("Fehler beim Erstellen des Embeddings (nicht kritisch):", err);
+            });
+          }
+        } catch (err) {
+          console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
+        }
+      }
+      
+      // Benachrichtige den Elternkomponenten
       if (onBookChange) onBookChange();
+      
+      toast({
+        title: "Buch hinzugefügt",
+        description: "Das Buch wurde erfolgreich hinzugefügt."
+      });
     } catch (error) {
       console.error("Error adding book:", error);
+      
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: "Das Buch konnte nicht hinzugefügt werden. Bitte versuche es erneut."
+      });
+      
       throw error;
     }
   };
-
-  const handleEdit = async (book: Partial<Book>) => {
-    if (!selectedBook) return;
+  
+  const handleUpdate = async (book: BookUpdate) => {
     try {
-      await updateBook(selectedBook.id, book);
+      // Verwende den authentifizierten Client
+      const { data, error } = await supabase
+        .from("books")
+        .update(book)
+        .eq("id", book.id)
+        .select();
+      
+      if (error) throw error;
+      
       if (onBookChange) onBookChange();
+      
+      toast({
+        title: "Buch aktualisiert",
+        description: "Das Buch wurde erfolgreich aktualisiert."
+      });
     } catch (error) {
       console.error("Error updating book:", error);
+      
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: "Das Buch konnte nicht aktualisiert werden. Bitte versuche es erneut."
+      });
+      
       throw error;
     }
   };
-
+  
   const handleDelete = async () => {
     if (!selectedBook) return;
+    
     try {
-      await deleteBook(selectedBook.id);
+      const { error } = await supabase
+        .from("books")
+        .delete()
+        .eq("id", selectedBook.id);
+      
+      if (error) throw error;
+      
+      setShowDeleteDialog(false);
       if (onBookChange) onBookChange();
-
+      
       toast({
-        title: "Success",
-        description: "Book deleted successfully",
+        title: "Buch gelöscht",
+        description: "Das Buch wurde erfolgreich gelöscht."
       });
     } catch (error) {
       console.error("Error deleting book:", error);
+      
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Failed to delete book",
+        title: "Fehler",
+        description: "Das Buch konnte nicht gelöscht werden. Bitte versuche es erneut."
       });
-    } finally {
-      setShowDeleteDialog(false);
-      setSelectedBook(null);
     }
   };
 
@@ -175,21 +255,25 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
           subjects={SUBJECTS}
           yearRange={YEAR_RANGE}
           locations={LOCATIONS}
-          selectedLevels={selectedLevels}
-          selectedSchool={selectedSchool}
-          selectedType={selectedType}
-          selectedSubjects={selectedSubjects}
-          selectedYearRange={selectedYearRange}
-          selectedAvailability={selectedAvailability}
-          selectedLocation={selectedLocation}
-          onLevelChange={setSelectedLevels}
-          onSchoolChange={setSelectedSchool}
-          onTypeChange={setSelectedType}
-          onSubjectChange={setSelectedSubjects}
-          onYearRangeChange={setSelectedYearRange}
-          onAvailabilityChange={setSelectedAvailability}
-          onLocationChange={setSelectedLocation}
-          onClearFilters={clearFilters}
+          selectedLevels={activeFilters.level || []}
+          selectedSchool={activeFilters.school || ""}
+          selectedType={activeFilters.type || ""}
+          selectedSubjects={activeFilters.subject || []}
+          selectedYearRange={activeFilters.year || YEAR_RANGE}
+          selectedAvailability={activeFilters.available}
+          selectedLocation={activeFilters.location || ""}
+          onLevelChange={(values) => handleFilterChange("level", values)}
+          onSchoolChange={(value) => handleFilterChange("school", value)}
+          onTypeChange={(value) => handleFilterChange("type", value)}
+          onSubjectChange={(values) => handleFilterChange("subject", values)}
+          onYearRangeChange={(values) => handleFilterChange("year", values)}
+          onAvailabilityChange={(value) => handleFilterChange("available", value)}
+          onLocationChange={(value) => handleFilterChange("location", value)}
+          onClearFilters={() => {
+            setActiveFilters({
+              available: null
+            });
+          }}
         />
       </div>
 
@@ -324,13 +408,13 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       />
 
       <BookForm
-        book={selectedBook}
+        book={selectedBook || undefined}
         open={showEditForm}
         onOpenChange={(open) => {
           setShowEditForm(open);
           if (!open) setSelectedBook(null);
         }}
-        onSubmit={handleEdit}
+        onSubmit={(updates) => handleUpdate(updates)}
       />
 
       {selectedBook && (

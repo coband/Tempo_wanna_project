@@ -42,10 +42,28 @@ function prepareVectorSource(book: any): string {
     }
 }
 
+// Einfache Funktion zur Prüfung des Service-Role-Keys
+function isServiceRoleKeyValid(req: Request): boolean {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return false;
+    }
+    
+    const token = authHeader.split(' ')[1];
+    return token === SUPABASE_SERVICE_ROLE_KEY;
+}
+
 serve(async (req) => {
     // CORS Preflight-Anfrage behandeln
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders })
+        return new Response("ok", { headers: corsHeaders });
+    }
+
+    // Einfache Service-Role-Key Prüfung - optional, kann entfernt werden, wenn Probleme auftreten
+    const isValidKey = isServiceRoleKeyValid(req);
+    if (!isValidKey) {
+        console.log("Hinweis: Keine Service-Role-Key-Authentifizierung gefunden, Anfrage wird trotzdem verarbeitet");
+        // Wir blockieren die Anfrage nicht, sondern loggen nur einen Hinweis
     }
 
     // Parameter aus der Anfrage extrahieren
@@ -84,7 +102,7 @@ serve(async (req) => {
         if (selectError) {
             console.error("Fehler beim Abrufen der Bücher:", selectError);
             return new Response(JSON.stringify({ error: `Fehler beim Abrufen der Bücher: ${selectError.message}` }), {
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+                headers: { "Content-Type": "application/json", ...corsHeaders },
                 status: 500,
             });
         }
@@ -93,7 +111,7 @@ serve(async (req) => {
             return new Response(
                 JSON.stringify({ message: "Keine Bücher gefunden oder alle Bücher haben bereits Embeddings." }),
                 {
-                    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+                    headers: { "Content-Type": "application/json", ...corsHeaders },
                     status: 200,
                 }
             );
@@ -198,14 +216,14 @@ serve(async (req) => {
                 successfulEmbeddings: successCount
             }),
             {
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+                headers: { "Content-Type": "application/json", ...corsHeaders },
                 status: 200,
             }
         );
     } catch (error) {
         console.error("❌ Fehler:", error.message);
         return new Response(JSON.stringify({ error: error.message }), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            headers: { "Content-Type": "application/json", ...corsHeaders },
             status: 500,
         });
     }

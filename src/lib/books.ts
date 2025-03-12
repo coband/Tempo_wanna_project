@@ -1,5 +1,6 @@
-import { supabase } from "./supabase";
+import { supabase } from "@/hooks/useSupabaseAuth";
 import type { Database } from "@/types/supabase";
+import { useAuth } from "@/lib/auth";
 
 export interface Book {
   id: string;
@@ -14,16 +15,25 @@ export interface Book {
   user_id: string;
   created_at: string;
   available: boolean;
-  borrowed_at: string;
-  borrowed_by: string;
+  borrowed_at: string | null;
+  borrowed_by: string | null;
   school: string;
   type: string;
   publisher: string;
 }
 
 export type NewBook = Database["public"]["Tables"]["books"]["Insert"];
+export type BookUpdate = Partial<Book>;
 
+/**
+ * VERALTET: Holt alle Bücher aus der Datenbank
+ * 
+ * @deprecated Diese Funktion verwendet den anonymen Client und wird 
+ * wahrscheinlich für authentifizierte Endpunkte mit 403 Forbidden fehlschlagen.
+ * Verwende stattdessen authClient.from('books').select() direkt in den Komponenten.
+ */
 export async function getBooks() {
+  console.warn("getBooks() ist veraltet - verwende den authClient direkt");
   console.log("Fetching books...");
   const { data, error } = await supabase
     .from("books")
@@ -39,109 +49,114 @@ export async function getBooks() {
   return data;
 }
 
-export async function createBook(book: NewBook) {
-  // Überprüfen, ob ein Buch mit dieser ISBN bereits existiert
-  const { data: existingBooks } = await supabase
-    .from("books")
-    .select("id, isbn")
-    .eq("isbn", book.isbn.trim())
-    .maybeSingle();
-  
-  if (existingBooks) {
-    throw new Error("Ein Buch mit dieser ISBN existiert bereits.");
+/**
+ * VERALTET: Erstellt ein neues Buch in der Datenbank
+ * 
+ * @deprecated Diese Funktion verwendet den anonymen Client und wird 
+ * wahrscheinlich für authentifizierte Endpunkte mit 403 Forbidden fehlschlagen.
+ * Verwende stattdessen authClient.from('books').insert() direkt in den Komponenten.
+ */
+export async function createBook(book: Omit<Book, "id">) {
+  console.warn("createBook() ist veraltet - verwende den authClient direkt");
+  // Buch in die Datenbank einfügen
+  const { data, error } = await supabase.from("books").insert(book).select();
+
+  if (error) throw error;
+
+  if (data && data.length > 0) {
+    // Wenn wir hier ein Embedding erstellen sollen
+    console.log("Buch erstellt:", data[0]);
+    return data[0];
   }
 
-  // Clean the ISBN before inserting
-  const cleanedBook = {
-    ...book,
-    isbn: book.isbn.trim(),
-  };
+  return null;
+}
 
-  // Insert the book
-  const { data: insertedBook, error } = await supabase
+/**
+ * VERALTET: Aktualisiert ein Buch in der Datenbank
+ * 
+ * @deprecated Diese Funktion verwendet den anonymen Client und wird 
+ * wahrscheinlich für authentifizierte Endpunkte mit 403 Forbidden fehlschlagen.
+ * Verwende stattdessen authClient.from('books').update() direkt in den Komponenten.
+ */
+export async function updateBook(id: string, updates: Partial<Book>) {
+  console.warn("updateBook() ist veraltet - verwende den authClient direkt");
+  const { data, error } = await supabase
     .from("books")
-    .insert(cleanedBook)
+    .update(updates)
+    .eq("id", id)
     .select()
     .single();
 
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * VERALTET: Löscht ein Buch aus der Datenbank
+ * 
+ * @deprecated Diese Funktion verwendet den anonymen Client und wird 
+ * wahrscheinlich für authentifizierte Endpunkte mit 403 Forbidden fehlschlagen.
+ * Verwende stattdessen authClient.from('books').delete() direkt in den Komponenten.
+ */
+export async function deleteBook(id: string) {
+  console.warn("deleteBook() ist veraltet - verwende den authClient direkt");
+  const { error } = await supabase.from("books").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Holt ein einzelnes Buch aus der Datenbank
+ * @param id Die ID des Buchs
+ */
+export async function getBookById(id: string) {
+  const { data, error } = await supabase
+    .from("books")
+    .select()
+    .eq("id", id)
+    .single();
+
   if (error) {
-    console.error("Error creating book:", error);
+    console.error("Error fetching book:", error);
     throw error;
   }
 
-  // Starte die Embedding-Generierung für das neue Buch
-  if (insertedBook) {
-    try {
-      // URL für Edge-Funktionen aus Umgebungsvariablen
-      const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
-        '';
-      
-      if (functionsUrl) {
-        console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
-        
-        // Asynchron die createEmbeddings-Funktion aufrufen - keine Authentifizierung notwendig
-        fetch(`${functionsUrl}/createEmbeddings`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            bookIds: [insertedBook.id]
-          })
-        }).catch(embedError => {
-          console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
-        });
-      } else {
-        console.warn("Konnte createEmbeddings nicht aufrufen: URL fehlt");
-      }
-    } catch (embedError) {
-      console.error("Fehler bei der Embedding-Erstellung:", embedError);
-      // Werfen wir keinen Fehler, da das Buch bereits erstellt wurde
-    }
-  }
+  return data;
 }
 
-export async function updateBook(id: string, book: Partial<Book>) {
-  const { error } = await supabase.from("books").update(book).eq("id", id);
-
-  if (error) throw error;
+/**
+ * Sucht Bücher in der Datenbank anhand eines Suchbegriffs
+ * Achtung: Dies funktioniert nur, wenn die Volltextsuche eingerichtet ist
+ */
+export async function searchBooks(searchTerm: string, limit = 50) {
+  console.warn("searchBooks() ist veraltet - verwende den authClient direkt");
   
-  // Embedding nach der Aktualisierung neu generieren
-  try {
-    // URL für Edge-Funktionen aus Umgebungsvariablen
-    const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` : 
-      '';
-    
-    if (functionsUrl) {
-      console.log(`Aktualisiere Embedding für Buch ${id}`);
-      
-      // Asynchron die createEmbeddings-Funktion aufrufen - keine Authentifizierung mehr notwendig
-      fetch(`${functionsUrl}/createEmbeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          bookIds: [id]
-        })
-      }).catch(embedError => {
-        console.error("Fehler beim Aufruf der Embedding-Funktion:", embedError);
-      });
-    } else {
-      console.warn("Konnte createEmbeddings nicht aufrufen: URL fehlt");
-    }
-  } catch (embedError) {
-    console.error("Fehler bei der Embedding-Aktualisierung:", embedError);
-    // Werfen wir keinen Fehler, da das Buch bereits aktualisiert wurde
-  }
-}
+  // Prüfen, ob es sich um eine ISBN handelt (nur Zahlen und Bindestriche)
+  const isISBN = /^[0-9\-]+$/.test(searchTerm);
 
-export async function deleteBook(id: string) {
-  const { error } = await supabase.from("books").delete().eq("id", id);
+  if (isISBN) {
+    // Bei ISBN direkter Vergleich
+    const { data, error } = await supabase
+      .from("books")
+      .select()
+      .ilike("isbn", `%${searchTerm}%`)
+      .limit(limit);
+
+    if (error) throw error;
+    return data;
+  }
+
+  // Bei anderen Suchbegriffen Volltextsuche oder Suche in relevanten Feldern
+  const { data, error } = await supabase
+    .from("books")
+    .select()
+    .or(
+      `title.ilike.%${searchTerm}%,author.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,publisher.ilike.%${searchTerm}%`
+    )
+    .limit(limit);
 
   if (error) throw error;
+  return data;
 }
 
 // Remove the subscribeToBooks function as we're handling it directly in BookManagement

@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { updateBook } from "@/lib/books";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/lib/auth";
+import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import type { Book } from "@/lib/books";
 import { X } from "lucide-react";
 
@@ -25,6 +25,7 @@ function BookDetails({
   const [book, setBook] = useState(initialBook);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { supabase } = useSupabaseAuth();
 
   // Update local book state when prop changes
   useEffect(() => {
@@ -57,13 +58,31 @@ function BookDetails({
 
     setIsLoading(true);
     try {
-      const updateData = {
-        available: !book.available,
-        borrowed_at: book.available ? new Date().toISOString() : null,
-        borrowed_by: book.available ? user.id : null,
-      };
+      // Wichtig: Beim Zurückgeben müssen wir sicherstellen, dass borrowed_at und borrowed_by
+      // explizit auf null gesetzt werden
+      const updateData = book.available
+        ? {
+            // Ausleihen
+            available: false,
+            borrowed_at: new Date().toISOString(),
+            borrowed_by: user.id,
+          }
+        : {
+            // Zurückgeben
+            available: true,
+            borrowed_at: null,
+            borrowed_by: null,
+          };
 
-      await updateBook(book.id, updateData);
+      console.log("Aktualisiere Buch mit Daten:", updateData);
+      
+      // Verwende den authentifizierten Client direkt
+      const { error } = await supabase
+        .from("books")
+        .update(updateData)
+        .eq("id", book.id);
+        
+      if (error) throw error;
 
       // Update local state immediately
       setBook((prev) => ({
@@ -76,6 +95,7 @@ function BookDetails({
         description: `Buch erfolgreich ${book.available ? "ausgeliehen" : "zurückgegeben"}.`,
       });
 
+      // Wichtig: Nach der Aktualisierung immer die übergeordnete Komponente informieren
       if (onBookChange) {
         onBookChange();
       }

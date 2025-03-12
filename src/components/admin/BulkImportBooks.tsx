@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,7 @@ interface BookPreview {
 }
 
 export default function BulkImportBooks() {
+  const { supabase } = useSupabaseAuth();
   const [isbnList, setIsbnList] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
@@ -143,36 +144,21 @@ export default function BulkImportBooks() {
         }
       }, 500);
       
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Keine aktive Sitzung gefunden');
-      }
-
-      const accessToken = session.data.session.access_token;
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-import-books`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({ isbns, preview: true }) // preview-Flag hinzugefügt
-        }
-      );
-
+      // Rufe die Edge-Funktion mit dem bereits authentifizierten Supabase-Client auf
+      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
+        body: { isbns, preview: true }
+      });
+      
       // Fortschrittsinterval stoppen, wenn Anfrage abgeschlossen ist
       clearInterval(progressInterval);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server antwortet mit Statuscode ${response.status}: ${errorText}`);
+      if (rpcError) {
+        throw new Error(`Fehler beim Aufruf der Funktion: ${rpcError.message}`);
       }
-
+      
       // Fortschritt auf 100% setzen, wenn erfolgreich
       setProgressPercentage(100);
-
-      const data = await response.json();
+      
       console.log('Vorschau abgeschlossen:', data);
       
       // Vorschaudaten verarbeiten und in das richtige Format umwandeln
@@ -248,34 +234,19 @@ export default function BulkImportBooks() {
         }
       }, 500);
       
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        clearInterval(progressInterval);
-        throw new Error('Keine aktive Sitzung gefunden');
-      }
-
-      const accessToken = session.data.session.access_token;
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-import-books`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({ isbns: selectedIsbns }) // Nur ausgewählte ISBNs senden
-        }
-      );
-
+      // Rufe die Edge-Funktion mit dem bereits authentifizierten Supabase-Client auf
+      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
+        body: { isbns: selectedIsbns } // Nur ausgewählte ISBNs senden
+      });
+      
       // Fortschrittsinterval stoppen
       clearInterval(progressInterval);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server antwortet mit Statuscode ${response.status}: ${errorText}`);
+      
+      if (rpcError) {
+        throw new Error(`Fehler beim Aufruf der Funktion: ${rpcError.message}`);
       }
-
-      // Nach erfolgreichem Import Fortschritt auf 95% setzen und Embedding-Phase anzeigen
+      
+      // Fortschritt erhöhen auf 95%
       setProgressPercentage(95);
       setProgressStage('Embeddings werden erstellt...');
       
@@ -284,10 +255,9 @@ export default function BulkImportBooks() {
         setProgressPercentage(100);
         setProgressStage('Import abgeschlossen');
       }, 3000);
-
-      const data = await response.json();
-      setResults(data);
+      
       console.log('Import abgeschlossen:', data);
+      setResults(data);
       
       // Zur Ergebnisansicht wechseln
       setCurrentTab('results');

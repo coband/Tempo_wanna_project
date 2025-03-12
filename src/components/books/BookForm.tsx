@@ -134,7 +134,11 @@ export function BookForm({
   const onSubmitForm = async (data: NewBook) => {
     try {
       setIsLoading(true);
-      await onSubmit({ ...data, user_id: user.id });
+      if (initialBook) {
+        await onSubmit({ ...data, user_id: user.id, id: initialBook.id });
+      } else {
+        await onSubmit({ ...data, user_id: user.id });
+      }
       toast({
         title: "Success",
         description: `Book ${initialBook ? "updated" : "created"} successfully`,
