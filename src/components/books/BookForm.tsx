@@ -323,7 +323,10 @@ export function BookForm({
                   if (isSelected) {
                     newSelected = selectedLevels.filter(l => l !== level);
                   } else {
-                    newSelected = [...selectedLevels, level];
+                    // Wenn eine neue Stufe ausgewählt wird und "Unbekannt" im Array ist,
+                    // entferne "Unbekannt" aus der Auswahl
+                    let levelsWithoutUnknown = selectedLevels.filter(l => l !== "Unbekannt");
+                    newSelected = [...levelsWithoutUnknown, level];
                   }
                   
                   field.onChange(newSelected.join(', '));
