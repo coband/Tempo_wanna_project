@@ -243,9 +243,28 @@ const SearchHeader = ({
                 <CommandGroup heading="Bücher">
                   {filteredSuggestions.map((book) => {
                     const selectBook = () => {
+                      // Wenn ein Buch ausgewählt wird, verwenden wir eine präzisere Suche
+                      // Statt nur nach dem Titel zu suchen, übergeben wir eine eindeutige ID
+                      // oder eine spezifische Kombination aus Titel und Autor
+                      
+                      // Die UI aktualisieren
                       setSearchQuery(book.title);
                       setIsCommandOpen(false);
-                      onSearch(book.title);
+                      
+                      // Präzise Suche durchführen
+                      if (book.id) {
+                        // Wenn die ID verfügbar ist, nach dieser suchen (genauester Treffer)
+                        console.log("Selecting book by ID:", book.id);
+                        onSearch(book.id);
+                      } else if (book.title && book.author) {
+                        // Wenn kein ID, aber Titel und Autor, suche mit genauerer Abfrage
+                        console.log("Selecting book by title and author:", book.title, book.author);
+                        onSearch(`"${book.title}" ${book.author}`);
+                      } else {
+                        // Fallback auf normale Titelsuche
+                        console.log("Selecting book by title only:", book.title);
+                        onSearch(book.title);
+                      }
                     };
                     
                     return (

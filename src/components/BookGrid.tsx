@@ -140,24 +140,16 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         const newBookId = data[0].id;
         
         try {
-          const functionsUrl = import.meta.env.VITE_SUPABASE_URL 
-            ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` 
-            : '';
+          // Rufe die createEmbeddings-Funktion mit dem authentifizierten Client auf
+          console.log("Erstelle Embedding für Buch:", newBookId);
+          const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
+            body: { book_id: newBookId }
+          });
           
-          if (functionsUrl) {
-            // Versuche, das Embedding asynchron zu erstellen
-            fetch(`${functionsUrl}/create-book-embedding`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                bookId: newBookId,
-                bookData: { ...book, id: newBookId }
-              })
-            }).catch(err => {
-              console.warn("Fehler beim Erstellen des Embeddings (nicht kritisch):", err);
-            });
+          if (embeddingError) {
+            console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+          } else {
+            console.log("Embedding erfolgreich erstellt:", embeddingData);
           }
         } catch (err) {
           console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);

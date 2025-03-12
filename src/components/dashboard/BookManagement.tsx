@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, ChangeEvent, useRef } from "react";
 import SearchHeader from "../SearchHeader";
 import BookGrid from "../BookGrid";
 import { DashboardHeader } from "./DashboardHeader";
@@ -6,6 +6,10 @@ import type { Book } from "@/lib/books";
 import { ChatButton } from "../books/ChatButton";
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { X } from "lucide-react";
+import { toast } from "react-hot-toast";
+import LoadingScreen from "../LoadingScreen";
+import NoResults from "../NoResults";
+import { debounce } from "lodash";
 
 interface BookManagementProps {
   initialSearchQuery?: string;
@@ -21,6 +25,7 @@ const BookManagement = ({
 }: BookManagementProps) => {
   const { supabase, loading: clientLoading, handleRequest } = useSupabaseAuth();
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  const [displayQuery, setDisplayQuery] = useState(initialSearchQuery);
   const [allBooks, setAllBooks] = useState<Book[]>([]);
   const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,69 +37,98 @@ const BookManagement = ({
     return isbn.replace(/[^a-zA-Z0-9]/g, '');
   };
 
-  // Vereinfachte fetchBooks-Funktion, die direkt supabase verwendet
-  const fetchBooks = async (searchTerm?: string) => {
+  // Hilfsfunktion zur Prüfung, ob ein String eine UUID ist
+  const isUUID = (str: string): boolean => {
+    return !!str.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  };
+
+  // Fetch books from the database
+  const fetchBooks = async (searchTerm = "") => {
     setLoading(true);
-    setLoadingError(null);
-    
+    console.log(`Fetching books with searchTerm: "${searchTerm}"`);
     try {
-      console.log("Fetching books...");
+      let data = null;
+      let error = null;
+
+      // Wir prüfen, ob der Suchbegriff eine UUID ist
+      const uuidSearch = isUUID(searchTerm);
       
-      // Standard-Abfrage
-      if (!searchTerm) {
-        const { data, error } = await supabase
+      if (searchTerm && uuidSearch) {
+        console.log("Searching by UUID:", searchTerm);
+        // Wenn es eine UUID ist, suchen wir direkt nach der ID
+        const result = await supabase
           .from("books")
           .select("*")
-          .order("created_at", { ascending: false });
-
-        if (error) {
-          console.error("Error fetching books:", error);
-          setLoadingError(error.message);
-          return;
+          .eq("id", searchTerm);
+        
+        data = result.data;
+        error = result.error;
+        console.log("UUID search result:", { data, error });
+        
+        // Setze displayQuery auf den Buchtitel, wenn ein Buch gefunden wurde
+        if (data && data.length > 0) {
+          setDisplayQuery(data[0].title || "Buch-ID");
         }
+      } 
+      else if (searchTerm) {
+        console.log("Searching by term:", searchTerm);
+        // Normaler Suchbegriff, nicht UUID
+        const result = await supabase
+          .from("books")
+          .select("*")
+          .or(`title.ilike.%${searchTerm}%,author.ilike.%${searchTerm}%,isbn.ilike.%${searchTerm}%`)
+          .order('created_at', { ascending: false });
+        
+        data = result.data;
+        error = result.error;
+      } 
+      else {
+        // Keine Suche, hole alle Bücher
+        const result = await supabase
+          .from("books")
+          .select("*")
+          .order('created_at', { ascending: false });
+        
+        data = result.data;
+        error = result.error;
+      }
 
-        console.log(`Found ${data?.length || 0} books`);
-        setAllBooks(data || []);
-        setFilteredBooks(data || []);
-        return;
+      if (error) {
+        console.error("Error fetching books:", error);
+        toast.error("Fehler beim Laden der Bücher");
+        return [];
       }
-      
-      // Mit Suchbegriff
-      // Prüfen, ob die Suche eine ISBN sein könnte (enthält nur Ziffern und Bindestriche)
-      const isISBNSearch = /^[\d\-]+$/.test(searchTerm);
-      console.log("Is ISBN search:", isISBNSearch);
-      
-      // Verwende supabase.functions.invoke statt direktem fetch
-      const { data: searchResult, error: searchError } = await supabase.functions.invoke('search-books', {
-        body: { 
-          query: searchTerm,
-          isbnSearch: isISBNSearch
-        }
-      });
-      
-      if (searchError) {
-        throw new Error(`Search API error: ${searchError.message}`);
-      }
-      
-      console.log("Search results:", searchResult);
-      
-      const results = searchResult?.books || [];
-      setAllBooks(results);
-      setFilteredBooks(results);
+
+      console.log(`Fetched ${data?.length || 0} books`);
+      if (data) setAllBooks(data);
+      return data || [];
     } catch (error) {
       console.error("Error fetching books:", error);
       setLoadingError('Ein Fehler ist beim Laden der Bücher aufgetreten.');
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
-  // Aktualisiere useEffect, um nur zu laden, wenn der Client nicht mehr lädt
+  // Optimierte useEffect für Buchladung
   useEffect(() => {
     if (clientLoading) return;
     
-    // Bücher laden
-    fetchBooks(searchQuery);
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    
+    // Eine Referenz auf den aktuellen Suchzustand für den Closure
+    const currentSearchQuery = searchQuery;
+    
+    // Nur laden, wenn keine UUID-Suche aktiv ist oder gar keine Suche
+    const shouldFetch = !isUUID(currentSearchQuery) || !currentSearchQuery.trim();
+    
+    if (shouldFetch) {
+      // Bücher mit Verzögerung laden, um zu häufige Anfragen bei schneller Eingabe zu vermeiden
+      debounceTimer = setTimeout(() => {
+        fetchBooks(currentSearchQuery);
+      }, currentSearchQuery ? 300 : 0); // Verzögerung nur bei Suchbegriffen
+    }
     
     // Echtzeit-Abonnement für Änderungen an Büchern
     const channel = supabase
@@ -108,19 +142,20 @@ const BookManagement = ({
         },
         (payload) => {
           console.log('Realtime change:', payload);
-          // Lade Bücher neu bei Änderungen
-          fetchBooks(searchQuery);
+          // Bei Änderungen erneut laden, aber nur, wenn keine Suche aktiv ist und nicht während einer Einzelbuchansicht
+          if (!currentSearchQuery && !isFiltered) {
+            fetchBooks();
+          }
         }
       )
-      .subscribe((status) => {
-        console.log('Subscription status:', status);
-      });
+      .subscribe();
     
     return () => {
       // Aufräumen
+      clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [searchQuery, supabase, clientLoading]);
+  }, [searchQuery, supabase, clientLoading, isFiltered]);
 
   // Apply search filter
   useEffect(() => {
@@ -135,6 +170,21 @@ const BookManagement = ({
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       console.log("Suche nach:", query);
+      
+      // Prüfe, ob es sich um eine UUID-Suche handelt
+      if (isUUID(query)) {
+        console.log("ID-basierte lokale Filterung");
+        // Suche direkt nach der ID
+        const idMatches = result.filter(book => book.id === query);
+        if (idMatches.length > 0) {
+          console.log(`ID-Suche: ${idMatches.length} Bücher gefunden für "${query}"`);
+          return setFilteredBooks(idMatches);
+        } else {
+          console.log("Keine Bücher mit dieser ID gefunden");
+          // Wenn die ID direkt nicht gefunden wird, das Ergebnis leer lassen
+          return setFilteredBooks([]);
+        }
+      }
       
       // Hilfsfunktion zur Normalisierung von ISBN (Entfernung aller Nicht-Alphanumerischen Zeichen)
       const normalizedQuery = normalizeISBN(query);
@@ -245,6 +295,13 @@ const BookManagement = ({
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     
+    // Wenn es eine UUID ist, setze einen benutzerfreundlichen Text, bis das Suchergebnis da ist
+    if (isUUID(query)) {
+      setDisplayQuery("Suche nach Buch...");
+    } else {
+      setDisplayQuery(query);
+    }
+    
     // Wenn die Suche gelöscht/zurückgesetzt wird, lade alle Bücher neu
     if (!query.trim()) {
       setIsFiltered(false);
@@ -256,6 +313,7 @@ const BookManagement = ({
 
   const resetSearch = () => {
     setSearchQuery('');
+    setDisplayQuery('');
     setIsFiltered(false);
     fetchBooks();
   };
@@ -277,7 +335,7 @@ const BookManagement = ({
           onSearch={handleSearch}
           books={filteredBooks}
           isLoading={loading}
-          currentQuery={searchQuery}
+          currentQuery={displayQuery}
         />
 
         {/* Filter-Indikator */}
@@ -286,7 +344,7 @@ const BookManagement = ({
             <div className="text-sm text-blue-700">
               {filteredBooks.length === 1 
                 ? "1 Buch gefunden für" 
-                : `${filteredBooks.length} Bücher gefunden für`}: "{searchQuery}"
+                : `${filteredBooks.length} Bücher gefunden für`}: "{displayQuery}"
             </div>
             <button
               onClick={resetSearch}

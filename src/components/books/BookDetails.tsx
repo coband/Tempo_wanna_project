@@ -22,16 +22,78 @@ function BookDetails({
   onBookChange,
 }: BookDetailsProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [book, setBook] = useState(initialBook);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [bookData, setBookData] = useState<Book | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const { supabase } = useSupabaseAuth();
 
-  // Update local book state when prop changes
+  // Debug-Ausgabe der Buchdaten
   useEffect(() => {
-    setBook(initialBook);
-  }, [initialBook]);
+    if (open && initialBook) {
+      console.log("Initial book data:", {
+        id: initialBook.id,
+        title: initialBook.title,
+        available: initialBook.available,
+        availableType: typeof initialBook.available
+      });
+    }
+  }, [initialBook, open]);
 
+  // Lade vollständige Buchdaten beim Öffnen des Dialogs
+  useEffect(() => {
+    if (!open || !initialBook?.id) return;
+    
+    const fetchCompleteBookData = async () => {
+      try {
+        setIsDataLoading(true);
+        console.log(`Lade vollständige Daten für Buch mit ID ${initialBook.id}...`);
+        
+        // Direktes Laden aus der Datenbank mit Fokus auf Verfügbarkeit
+        const { data, error } = await supabase
+          .from("books")
+          .select("*")
+          .eq("id", initialBook.id)
+          .single();
+          
+        if (error) {
+          console.error("Fehler beim Laden der vollständigen Buchdaten:", error);
+          // Fallback auf initialBook bei Fehler
+          setBookData(initialBook);
+          return;
+        }
+        
+        if (data) {
+          console.log("Geladene Buchdaten aus DB:", {
+            id: data.id,
+            title: data.title,
+            available: data.available,
+            availableType: typeof data.available
+          });
+          
+          setBookData(data);
+        } else {
+          console.warn("Keine Daten für Buch mit ID", initialBook.id, "gefunden");
+          setBookData(initialBook);
+        }
+      } catch (err) {
+        console.error("Fehler beim Laden der Buchdaten:", err);
+        setBookData(initialBook);
+      } finally {
+        setIsDataLoading(false);
+      }
+    };
+    
+    fetchCompleteBookData();
+  }, [initialBook?.id, open, supabase]);
+
+  // Wenn keine Daten geladen sind, zeige initialBook
+  const book = bookData || initialBook;
+  
+  // Bestimme den Verfügbarkeitsstatus eindeutig
+  // Explizite Konvertierung zu Boolean für konsistente Behandlung
+  const isAvailable = bookData ? Boolean(bookData.available) : Boolean(initialBook.available);
+  
   // Check if the current user is the one who borrowed the book
   const isBookBorrowedByCurrentUser = book.borrowed_by === user?.id;
 
@@ -45,30 +107,24 @@ function BookDetails({
       return;
     }
 
-    // If book is not available and current user is not the borrower, they can't return it
-    if (!book.available && !isBookBorrowedByCurrentUser) {
+    if (!isAvailable && !isBookBorrowedByCurrentUser) {
       toast({
         variant: "destructive",
         title: "Error",
-        description:
-          "Dieses Buch wurde von einem anderen Benutzer ausgeliehen.",
+        description: "Dieses Buch wurde von einem anderen Benutzer ausgeliehen.",
       });
       return;
     }
 
     setIsLoading(true);
     try {
-      // Wichtig: Beim Zurückgeben müssen wir sicherstellen, dass borrowed_at und borrowed_by
-      // explizit auf null gesetzt werden
-      const updateData = book.available
+      const updateData = isAvailable
         ? {
-            // Ausleihen
             available: false,
             borrowed_at: new Date().toISOString(),
             borrowed_by: user.id,
           }
         : {
-            // Zurückgeben
             available: true,
             borrowed_at: null,
             borrowed_by: null,
@@ -76,7 +132,6 @@ function BookDetails({
 
       console.log("Aktualisiere Buch mit Daten:", updateData);
       
-      // Verwende den authentifizierten Client direkt
       const { error } = await supabase
         .from("books")
         .update(updateData)
@@ -84,18 +139,19 @@ function BookDetails({
         
       if (error) throw error;
 
-      // Update local state immediately
-      setBook((prev) => ({
-        ...prev,
-        ...updateData,
-      }));
+      // Aktualisiere lokalen Status
+      if (bookData) {
+        setBookData({
+          ...bookData,
+          ...updateData,
+        });
+      }
 
       toast({
         title: "Erfolg",
-        description: `Buch erfolgreich ${book.available ? "ausgeliehen" : "zurückgegeben"}.`,
+        description: `Buch erfolgreich ${isAvailable ? "ausgeliehen" : "zurückgegeben"}.`,
       });
 
-      // Wichtig: Nach der Aktualisierung immer die übergeordnete Komponente informieren
       if (onBookChange) {
         onBookChange();
       }
@@ -104,16 +160,15 @@ function BookDetails({
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Fehler beim ${book.available ? "Ausleihen" : "Zurückgeben"} des Buchs.`,
+        description: `Fehler beim ${isAvailable ? "Ausleihen" : "Zurückgeben"} des Buchs.`,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Determine if the borrow/return button should be disabled
   const isButtonDisabled =
-    isLoading || (!book.available && !isBookBorrowedByCurrentUser);
+    isLoading || isDataLoading || (!isAvailable && !isBookBorrowedByCurrentUser);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -130,9 +185,13 @@ function BookDetails({
         
         <div className="px-6 py-3 flex items-center justify-between border-b">
           <div className="flex flex-wrap gap-2">
-            <Badge variant={book.available ? "default" : "secondary"} className="font-medium">
-              {book.available ? "Verfügbar" : "Ausgeliehen"}
-            </Badge>
+            {isDataLoading ? (
+              <Badge variant="outline" className="bg-gray-100">Lädt...</Badge>
+            ) : (
+              <Badge variant={isAvailable ? "default" : "secondary"} className="font-medium">
+                {isAvailable ? "Verfügbar" : "Ausgeliehen"}
+              </Badge>
+            )}
             {book.subject && <Badge variant="outline">{book.subject}</Badge>}
             {book.level && <Badge variant="outline">{book.level}</Badge>}
             {book.type && <Badge variant="outline" className="bg-gray-100">{book.type}</Badge>}
@@ -140,13 +199,13 @@ function BookDetails({
           <Button
             onClick={handleAvailabilityToggle}
             disabled={isButtonDisabled}
-            variant={book.available ? "default" : "secondary"}
+            variant={isAvailable ? "default" : "secondary"}
             className="ml-2"
           >
-            {isLoading && (
+            {(isLoading || isDataLoading) && (
               <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
             )}
-            {book.available
+            {isAvailable
               ? "Ausleihen"
               : isBookBorrowedByCurrentUser
                 ? "Zurückgeben"
@@ -191,7 +250,7 @@ function BookDetails({
             </div>
           )}
 
-          {!book.available && book.borrowed_by && book.borrowed_at && (
+          {!isAvailable && book.borrowed_by && book.borrowed_at && (
             <div className="mt-4 pt-4 border-t">
               <h3 className="text-md font-semibold mb-2">Ausleih-Information</h3>
               <div className="bg-gray-50 p-3 rounded-md text-sm">
