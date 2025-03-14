@@ -1,4 +1,8 @@
-import { supabase } from "./supabase";
+// Funktion, die einen Supabase API Key für direkte Aufrufe der Edge-Funktionen holt
+// Wir verwenden anon key für öffentliche Edge-Funktions-Aufrufe
+const getApiKey = () => {
+  return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+};
 
 export async function fetchBookInfo(isbn: string) {
   try {
@@ -11,11 +15,22 @@ export async function fetchBookInfo(isbn: string) {
       throw new Error("Supabase URL is not configured");
     }
 
+    // API Key holen
+    const apiKey = getApiKey();
+
+    // Headers vorbereiten
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      // Authentifizierungsheader hinzufügen - wir verwenden den anonymen API-Key
+      "Authorization": `Bearer ${apiKey}`,
+      // x-client-info header hinzufügen für Supabase
+      "x-client-info": "@supabase/auth-helpers-nextjs"
+    };
+    
+    // Edge-Funktion mit Authentifizierung aufrufen
     const response = await fetch(`${functionsUrl}/book-info`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify({ isbn, preview: true }), // Wir verwenden den Preview-Modus
     });
 

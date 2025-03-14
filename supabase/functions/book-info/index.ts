@@ -1,27 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
+import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts";
 
 const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
 serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }
+  // CORS-Präflug-Anfrage mit der gemeinsamen Funktion behandeln
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
+  // Debugging: Log des Origin-Headers
+  const origin = req.headers.get("Origin");
+  console.log("Anfrage-Origin:", origin);
+  
   try {
     // Standard-Benutzer-ID für anonyme Anfragen
     let userId = "anonymous";
@@ -30,22 +24,8 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     
     if (authHeader) {
-      try {
-        // Token extrahieren und Benutzer überprüfen, aber keinen Fehler werfen, wenn es fehlschlägt
-        const token = authHeader.replace("Bearer ", "");
-        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
-        
-        if (!userError && userData?.user?.id) {
-          userId = userData.user.id;
-          console.log("Benutzer erfolgreich authentifiziert:", userId);
-        } else {
-          console.log("Token-Validierung fehlgeschlagen, setze auf anonymen Benutzer");
-        }
-      } catch (authError) {
-        console.error("Fehler bei der Authentifizierung:", authError);
-        // Fahre trotzdem fort, auch wenn die Authentifizierung fehlschlägt
-      }
+      console.log("Authorization Header vorhanden, aber Authentifizierung wird nicht erzwungen");
+      // Wir speichern die Information, dass ein Auth-Header vorhanden war, erzwingen aber keine Validierung
     } else {
       console.log("Kein Authorization Header vorhanden, setze auf anonymen Benutzer");
     }
@@ -59,10 +39,15 @@ serve(async (req) => {
     console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
     
     if (!isbn) {
-      return new Response(JSON.stringify({ error: "ISBN is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error: "Ungültige Anfrage. Bitte geben Sie eine ISBN an.",
+        }),
+        {
+          status: 400,
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Überprüfen, ob das Buch bereits in der Datenbank existiert
@@ -75,7 +60,7 @@ serve(async (req) => {
     if (existingBook) {
       console.log(`Buch mit ISBN ${isbn} existiert bereits in der Datenbank:`, existingBook);
       return new Response(JSON.stringify(existingBook), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
@@ -134,7 +119,7 @@ serve(async (req) => {
           content: content,
         }),
         {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           status: 500,
         },
       );
@@ -176,7 +161,7 @@ serve(async (req) => {
           isbn 
         }),
         {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           status: 404, // Verwende 404 für "nicht gefunden" statt 500 für Serverfehler
         }
       );
@@ -204,7 +189,7 @@ serve(async (req) => {
     if (isPreviewMode) {
       console.log("Vorschaumodus aktiviert - Kein Datenbankeintrag wird erstellt");
       return new Response(JSON.stringify(formattedBookData), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     } else {
       console.log("Import-Modus aktiviert - Datenbankeintrag wird erstellt");
@@ -240,7 +225,7 @@ serve(async (req) => {
           bookData 
         }),
         {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           status: 500,
         }
       );
@@ -275,13 +260,20 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify(insertedBook || bookData), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    console.error("Fehler beim Abrufen der Buchinformationen:", error);
+    
+    return new Response(
+      JSON.stringify({
+        error: "Fehler beim Abrufen der Buchinformationen",
+        details: error.message,
+      }),
+      {
+        status: 500,
+        headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
+      }
+    );
   }
 });
