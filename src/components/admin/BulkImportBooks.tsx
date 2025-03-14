@@ -56,8 +56,9 @@ interface BookPreview {
   error?: string; // Für Fehler beim Abrufen der Vorschau
 }
 
-export default function BulkImportBooks() {
-  const { supabase } = useSupabaseAuth();
+export function BulkImportBooks() {
+  // Supabase authentifizierten Client holen
+  const { supabase: authClient, publicClient: supabase } = useSupabaseAuth();
   const [isbnList, setIsbnList] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
@@ -111,7 +112,7 @@ export default function BulkImportBooks() {
     );
   };
 
-  // Funktion zum Abrufen von Buchvorschauen
+  // Funktion zum Laden der Buchvorschauen
   const fetchBookPreviews = async () => {
     setPreviewLoading(true);
     setError('');
@@ -119,22 +120,23 @@ export default function BulkImportBooks() {
     setProgressPercentage(0);
     
     try {
-      // ISBN-Nummern in ein Array umwandeln (nach Zeilenumbrüchen oder Kommas trennen)
+      // Eingabe validieren und parsen
+      if (!isbnList.trim()) {
+        setError('Bitte gib mindestens eine ISBN-Nummer ein.');
+        setPreviewLoading(false);
+        return;
+      }
+      
+      // ISBNs extrahieren (Zeilenumbrüche, Leerzeichen, Kommas als Trennzeichen betrachten)
       const isbns = isbnList
         .split(/[\n,]+/)
         .map(isbn => isbn.trim())
         .filter(isbn => isbn.length > 0);
       
-      if (isbns.length === 0) {
-        setError('Bitte gib mindestens eine ISBN-Nummer ein.');
-        setPreviewLoading(false);
-        return;
-      }
-
       setProgress({ current: 0, total: isbns.length });
-      console.log(`Starte Vorschau für ${isbns.length} Bücher`);
+      console.log(`Vorschau für ${isbns.length} ISBN-Nummern wird geladen`);
       
-      // Simuliere Fortschritt für den Benutzer
+      // Fortschrittsanzeige simulieren
       let currentProgress = 0;
       const progressInterval = setInterval(() => {
         // Langsam bis 95% voranschreiten, die letzten 5% werden nach Abschluss gesetzt
@@ -144,14 +146,14 @@ export default function BulkImportBooks() {
         }
       }, 500);
       
-      // Rufe die Edge-Funktion mit dem bereits authentifizierten Supabase-Client auf
-      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
-        body: { isbns, preview: true }
+      // Edge-Funktion aufrufen - mit preview: true
+      const { data, error: rpcError } = await authClient.functions.invoke('bulk-import-books', {
+        body: { isbns, preview: true } // Preview-Modus aktivieren
       });
       
-      // Fortschrittsinterval stoppen, wenn Anfrage abgeschlossen ist
+      // Fortschrittsinterval stoppen
       clearInterval(progressInterval);
-
+      
       if (rpcError) {
         throw new Error(`Fehler beim Aufruf der Funktion: ${rpcError.message}`);
       }
@@ -234,8 +236,8 @@ export default function BulkImportBooks() {
         }
       }, 500);
       
-      // Rufe die Edge-Funktion mit dem bereits authentifizierten Supabase-Client auf
-      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
+      // Rufe die Edge-Funktion mit dem authentifizierten Supabase-Client auf
+      const { data, error: rpcError } = await authClient.functions.invoke('bulk-import-books', {
         body: { isbns: selectedIsbns } // Nur ausgewählte ISBNs senden
       });
       
@@ -716,4 +718,6 @@ export default function BulkImportBooks() {
       </Card>
     </div>
   );
-} 
+}
+
+export default BulkImportBooks; 

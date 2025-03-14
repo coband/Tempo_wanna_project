@@ -52,12 +52,23 @@ serve(async (req) => {
     const corsResponse = handleCorsPreflightRequest(req);
     if (corsResponse) return corsResponse;
 
-    // Einfache Service-Role-Key Prüfung - optional, kann entfernt werden, wenn Probleme auftreten
+    // Strenge Service-Role-Key Prüfung - Anfragen ohne gültigen Key werden abgelehnt
     const isValidKey = isServiceRoleKeyValid(req);
     if (!isValidKey) {
-        console.log("Hinweis: Keine Service-Role-Key-Authentifizierung gefunden, Anfrage wird trotzdem verarbeitet");
-        // Wir blockieren die Anfrage nicht, sondern loggen nur einen Hinweis
+        console.error("Unerlaubter Zugriff: Kein gültiger Service-Role-Key gefunden");
+        return new Response(
+            JSON.stringify({ 
+                error: 'Unerlaubter Zugriff', 
+                message: 'Diese Operation erfordert einen gültigen Service-Role-Key.'
+            }),
+            {
+                headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+                status: 401
+            }
+        );
     }
+    
+    console.log("Service-Role-Key-Authentifizierung erfolgreich");
 
     // Parameter aus der Anfrage extrahieren
     let bookIds: string[] = [];

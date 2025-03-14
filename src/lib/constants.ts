@@ -1,5 +1,6 @@
 export const LEVELS = [
-  "KiGa", 
+  "KiGa",
+  "Kindergarten", 
   "1. Klasse", 
   "2. Klasse", 
   "3. Klasse", 
@@ -20,7 +21,7 @@ export const SUBJECTS = [
   "TTG",
   "Divers",
   "Medien und Informatik",
-  "Deutsch als Zweitsprache (DaZ)",
+  "Deutsch als Zweitsprache",
   "Förderung (IF)"
 ];
 
@@ -29,7 +30,9 @@ export const BOOK_TYPES = [
   "Lesebuch",
   "Lernmaterial",
   "Fachbuch",
-  "Sachbuch"
+  "Sachbuch",
+  "Bilderbuch",
+  "Comic"
 ];
 
 export const SCHOOLS = [

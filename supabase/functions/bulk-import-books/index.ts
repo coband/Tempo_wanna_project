@@ -24,71 +24,113 @@ serve(async (req) => {
     let userId = null;
     let isAdmin = false; // Standard: Benutzer ist kein Admin
     
-    // Wenn ein Authentifizierungs-Header vorhanden ist, versuchen wir zu authentifizieren
-    if (authHeader) {
-      try {
-        const token = authHeader.replace('Bearer ', '');
-        
-        // 1. Versuche es als Supabase-Token (falls es ein Legacy-Token ist)
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const { data: supabaseAuth, error: supabaseError } = await supabase.auth.getUser(token);
-        
-        if (!supabaseError && supabaseAuth?.user) {
-          userId = supabaseAuth.user.id;
-          console.log('Benutzer über Supabase authentifiziert:', userId);
-          isAdmin = true; // Alle alten Supabase-Benutzer als Admins betrachten
-        } else {
-          // 2. Es könnte ein Clerk-Token sein - versuche es zu dekodieren
-          try {
-            // JWT-Token dekodieren (header.payload.signature)
-            const tokenParts = token.split('.');
-            if (tokenParts.length === 3) {
-              // Base64-decodieren und JSON parsen
-              const payload = JSON.parse(
-                new TextDecoder().decode(
-                  Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
-                )
-              );
-              
-              // Clerk-spezifische Felder prüfen
-              if (payload.sub) {
-                userId = payload.sub;
-                
-                // Rolle aus den Metadaten ermitteln
-                const userRole = payload.user_role || 
-                                (payload.user_metadata && payload.user_metadata.user_role);
-                
-                isAdmin = userRole === 'admin' || userRole === 'superadmin';
-                
-                console.log(`Clerk-Benutzer ${userId} identifiziert mit Rolle: ${userRole}`);
-              }
-            }
-          } catch (jwtError) {
-            console.error('Fehler beim Dekodieren des JWT:', jwtError);
-          }
+    // Wenn kein Authentifizierungs-Header vorhanden ist, sofort ablehnen
+    if (!authHeader) {
+      console.error('Kein Authentifizierungs-Header gefunden');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Nicht autorisiert', 
+          message: 'Diese Funktion erfordert eine Authentifizierung.'
+        }), 
+        { 
+          status: 401, 
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } 
         }
-      } catch (error) {
-        console.error('Fehler bei der Authentifizierung:', error);
+      );
+    }
+    
+    // Authentifizierung versuchen
+    try {
+      const token = authHeader.replace('Bearer ', '');
+      
+      // 1. Versuche es als Supabase-Token (falls es ein Legacy-Token ist)
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      const { data: supabaseAuth, error: supabaseError } = await supabase.auth.getUser(token);
+      
+      if (!supabaseError && supabaseAuth?.user) {
+        userId = supabaseAuth.user.id;
+        console.log('Benutzer über Supabase authentifiziert:', userId);
+        isAdmin = true; // Alle alten Supabase-Benutzer als Admins betrachten
+      } else {
+        // 2. Es könnte ein Clerk-Token sein - versuche es zu dekodieren
+        try {
+          // JWT-Token dekodieren (header.payload.signature)
+          const tokenParts = token.split('.');
+          if (tokenParts.length === 3) {
+            // Base64-decodieren und JSON parsen
+            const payload = JSON.parse(
+              new TextDecoder().decode(
+                Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
+              )
+            );
+            
+            // Clerk-spezifische Felder prüfen
+            if (payload.sub) {
+              userId = payload.sub;
+              
+              // Rolle aus den Metadaten ermitteln
+              const userRole = payload.user_role || 
+                              (payload.user_metadata && payload.user_metadata.user_role);
+              
+              isAdmin = userRole === 'admin' || userRole === 'superadmin';
+              
+              console.log(`Clerk-Benutzer ${userId} identifiziert mit Rolle: ${userRole}`);
+            } else {
+              throw new Error('Token enthält keine user_id (sub)');
+            }
+          } else {
+            throw new Error('Ungültiges JWT-Token-Format');
+          }
+        } catch (jwtError) {
+          console.error('Fehler beim Dekodieren des JWT:', jwtError);
+          throw new Error('Token-Validierung fehlgeschlagen');
+        }
       }
+    } catch (error) {
+      console.error('Fehler bei der Authentifizierung:', error);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentifizierungsfehler', 
+          message: 'Die Authentifizierung ist fehlgeschlagen: ' + error.message 
+        }), 
+        { 
+          status: 401, 
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } 
+        }
+      );
     }
     
+    // Nach der Authentifizierung muss ein Benutzer gefunden worden sein
     if (!userId) {
-      console.error('Benutzer konnte nicht authentifiziert werden');
+      console.error('Benutzer konnte nicht identifiziert werden');
       return new Response(
-        JSON.stringify({ error: 'Nicht autorisiert' }), 
-        { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'Nicht autorisiert', 
+          message: 'Benutzer konnte nicht identifiziert werden' 
+        }), 
+        { 
+          status: 401, 
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } 
+        }
       );
     }
     
+    // Nur Administratoren dürfen diese Funktion nutzen
     if (!isAdmin) {
-      console.error(`Benutzer ${userId} ist kein Admin`);
+      console.error('Benutzer hat keine Administratorrechte:', userId);
       return new Response(
-        JSON.stringify({ error: 'Verboten - Admin-Rechte erforderlich' }), 
-        { status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'Zugriff verweigert', 
+          message: 'Diese Funktion ist nur für Administratoren verfügbar' 
+        }), 
+        { 
+          status: 403, 
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } 
+        }
       );
     }
     
-    console.log(`Admin-Berechtigung bestätigt für Benutzer: ${userId}`);
+    console.log('Benutzer ist authentifiziert und berechtigt:', userId);
     
     // Request-Body parsen
     const requestData = await req.json();
