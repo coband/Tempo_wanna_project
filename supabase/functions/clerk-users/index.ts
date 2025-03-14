@@ -1,10 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-
-// CORS-Header für API-Anfragen
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from '../cors.ts';
 
 // Clerk API URL
 const CLERK_API_URL = 'https://api.clerk.com/v1';
@@ -60,11 +55,9 @@ serve(async (req) => {
   console.log('---------------------------------------------');
   console.log(`Neue Clerk-Benutzer-Anfrage: ${req.method} ${new URL(req.url).pathname}`);
   
-  // CORS-Präflug-Anfrage behandeln
-  if (req.method === 'OPTIONS') {
-    console.log('CORS Preflight-Anfrage empfangen');
-    return new Response('ok', { headers: corsHeaders });
-  }
+  // CORS-Präflug-Anfrage behandeln mit der zentralen Funktion
+  const preflightResponse = handleCorsPreflightRequest(req);
+  if (preflightResponse) return preflightResponse;
 
   try {
     // Prüfen, ob der Clerk Secret Key konfiguriert ist
@@ -74,7 +67,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Clerk Secret Key ist nicht konfiguriert' }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
           status: 500,
         }
       );
@@ -106,7 +99,7 @@ serve(async (req) => {
             details: error.message
           }),
           {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
             status: 400,
           }
         );
@@ -135,7 +128,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ users: transformedUsers }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 200,
             }
           );
@@ -144,7 +137,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'Fehler beim Abrufen der Benutzer', details: error.message }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 500,
             }
           );
@@ -159,7 +152,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'userId und role sind erforderlich' }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 400,
             }
           );
@@ -188,7 +181,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ hasRole: updatedUser.public_metadata?.role === role }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 200,
             }
           );
@@ -197,7 +190,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'Fehler beim Ändern der Rolle', details: error.message }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 500,
             }
           );
@@ -212,7 +205,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'userId ist erforderlich' }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 400,
             }
           );
@@ -242,7 +235,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ isBlocked: blockedUser.locked || false }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 200,
             }
           );
@@ -251,7 +244,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'Fehler beim Sperren/Entsperren des Benutzers', details: error.message }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 500,
             }
           );
@@ -265,7 +258,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'E-Mail-Adresse ist erforderlich' }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 400,
             }
           );
@@ -282,7 +275,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ message: `Ein Anmelde-Link wurde an ${email} gesendet.` }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 200,
             }
           );
@@ -291,7 +284,7 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({ error: 'Fehler beim Senden des Anmelde-Links', details: error.message }),
             {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
               status: 500,
             }
           );
@@ -302,7 +295,7 @@ serve(async (req) => {
         return new Response(
           JSON.stringify({ error: 'Unbekannte Aktion' }),
           {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
             status: 400,
           }
         );
@@ -316,7 +309,7 @@ serve(async (req) => {
         stack: error.stack
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
         status: 500,
       }
     );

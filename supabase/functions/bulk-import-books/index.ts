@@ -1,19 +1,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.23.0';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts";
 
 serve(async (req) => {
   console.log('Bulk Import Books function called');
   
   // CORS Preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
   try {
     // Umgebungsvariablen abrufen
@@ -82,7 +76,7 @@ serve(async (req) => {
       console.error('Benutzer konnte nicht authentifiziert werden');
       return new Response(
         JSON.stringify({ error: 'Nicht autorisiert' }), 
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
     
@@ -90,7 +84,7 @@ serve(async (req) => {
       console.error(`Benutzer ${userId} ist kein Admin`);
       return new Response(
         JSON.stringify({ error: 'Verboten - Admin-Rechte erforderlich' }), 
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
     
@@ -108,7 +102,7 @@ serve(async (req) => {
       console.error('Ungültige Anfrage: Keine ISBN-Liste vorhanden');
       return new Response(
         JSON.stringify({ error: 'Ungültige Anfrage - ISBN-Liste erforderlich' }), 
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
       );
     }
     
@@ -208,14 +202,14 @@ serve(async (req) => {
     
     return new Response(
       JSON.stringify(results), 
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
     
   } catch (error) {
     console.error('Unbehandelte Ausnahme:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Interner Serverfehler' }), 
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 }); 

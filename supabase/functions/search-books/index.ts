@@ -1,16 +1,11 @@
 import { serve } from 'http/server';
 import { createClient } from '@supabase/supabase-js';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts";
 
 serve(async (req) => {
   // CORS-Präflug-Anfrage behandeln
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
   try {
     // Umgebungsvariablen für Supabase
@@ -56,7 +51,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Request-Body ist erforderlich' }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
           status: 400,
         }
       );
@@ -69,7 +64,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: 'Suchbegriff ist erforderlich' }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
           status: 400,
         }
       );
@@ -139,7 +134,7 @@ serve(async (req) => {
           }
         }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
           status: 200,
         }
       );
@@ -180,7 +175,7 @@ serve(async (req) => {
           }
         }),
         {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
           status: 200,
         }
       );
@@ -198,7 +193,7 @@ serve(async (req) => {
         timestamp: new Date().toISOString()
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
         status: 500,
       }
     );
