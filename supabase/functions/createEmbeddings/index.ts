@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import axios from "https://esm.sh/axios@1.8.1"
+import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts"
 
 // Supabase Setup
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
@@ -12,13 +13,6 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!
 
 // Konfiguration für Batch-Verarbeitung
 const BATCH_SIZE = 25 // Anzahl der Bücher, die pro Batch verarbeitet werden (reduziert, da axios verwendet wird)
-
-// CORS Headers für die Antwort
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
 
 // Funktion zur Vorbereitung des vector_source aus Buchdaten
 function prepareVectorSource(book: any): string {
@@ -55,9 +49,8 @@ function isServiceRoleKeyValid(req: Request): boolean {
 
 serve(async (req) => {
     // CORS Preflight-Anfrage behandeln
-    if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
-    }
+    const corsResponse = handleCorsPreflightRequest(req);
+    if (corsResponse) return corsResponse;
 
     // Einfache Service-Role-Key Prüfung - optional, kann entfernt werden, wenn Probleme auftreten
     const isValidKey = isServiceRoleKeyValid(req);
@@ -102,7 +95,7 @@ serve(async (req) => {
         if (selectError) {
             console.error("Fehler beim Abrufen der Bücher:", selectError);
             return new Response(JSON.stringify({ error: `Fehler beim Abrufen der Bücher: ${selectError.message}` }), {
-                headers: { "Content-Type": "application/json", ...corsHeaders },
+                headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
                 status: 500,
             });
         }
@@ -111,7 +104,7 @@ serve(async (req) => {
             return new Response(
                 JSON.stringify({ message: "Keine Bücher gefunden oder alle Bücher haben bereits Embeddings." }),
                 {
-                    headers: { "Content-Type": "application/json", ...corsHeaders },
+                    headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
                     status: 200,
                 }
             );
@@ -142,6 +135,7 @@ serve(async (req) => {
         const totalBooks = allBooks.length;
         let processedCount = 0;
         let successCount = 0;
+        let batchErrors: string[] = [];
 
         for (let i = 0; i < totalBooks; i += BATCH_SIZE) {
             const batch = allBooks.slice(i, i + BATCH_SIZE);
@@ -178,6 +172,7 @@ serve(async (req) => {
                         ? JSON.stringify(embeddingError.response.data) 
                         : embeddingError.message || "Unbekannter Fehler";
                         
+                    batchErrors.push(errorMessage);
                     await supabase
                         .from("embedding_errors")
                         .insert({
@@ -209,22 +204,30 @@ serve(async (req) => {
             }
         }
 
+        // Erfolgsantwort senden, möglicherweise mit Statistiken über verarbeitete Bücher
         return new Response(
             JSON.stringify({
-                message: `${successCount} von ${totalBooks} Embeddings erfolgreich erstellt.`,
-                processedBooks: processedCount,
-                successfulEmbeddings: successCount
+                message: `Batch-Embedding-Prozess abgeschlossen. ${processedCount} Bücher verarbeitet.`,
+                success: true,
+                totalProcessed: processedCount,
+                error: batchErrors.length > 0 ? batchErrors : null
             }),
             {
-                headers: { "Content-Type": "application/json", ...corsHeaders },
-                status: 200,
+                headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
+                status: 200
             }
         );
     } catch (error) {
-        console.error("❌ Fehler:", error.message);
-        return new Response(JSON.stringify({ error: error.message }), {
-            headers: { "Content-Type": "application/json", ...corsHeaders },
-            status: 500,
-        });
+        console.error("Unbehandelter Fehler:", error);
+        return new Response(
+            JSON.stringify({
+                error: "Ein unerwarteter Fehler ist aufgetreten",
+                details: error.message
+            }),
+            {
+                headers: { "Content-Type": "application/json", ...getCorsHeaders(req) },
+                status: 500
+            }
+        );
     }
 }); 
