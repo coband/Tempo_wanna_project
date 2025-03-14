@@ -22,6 +22,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
 import { useAuth } from "@/lib/auth";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { fetchBookInfo } from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -45,11 +46,13 @@ export function BookForm({
   onOpenChange,
   onSubmit,
 }: BookFormProps) {
+  const [book, setBook] = useState<Book | null>(initialBook || null);
   const [isLoading, setIsLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoadingBookInfo, setIsLoadingBookInfo] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const clerkAuth = useClerkAuth();
 
   const { register, handleSubmit, control, reset, setValue, getValues } =
     useForm<NewBook>();
@@ -165,7 +168,17 @@ export function BookForm({
     setIsLoadingBookInfo(true);
     try {
       console.log("Fetching book info for ISBN:", isbn);
-      const bookInfo = await fetchBookInfo(isbn);
+      
+      // Hole Clerk-Token für Supabase
+      let authToken = null;
+      try {
+        authToken = await clerkAuth.getToken({ template: 'supabase' });
+      } catch (tokenError) {
+        console.warn("Fehler beim Abrufen des Auth-Tokens:", tokenError);
+        // Wir fahren trotzdem fort, fetchBookInfo wird dann den anon key verwenden
+      }
+      
+      const bookInfo = await fetchBookInfo(isbn, authToken);
       console.log("Received book info:", bookInfo);
       setValue("isbn", bookInfo.isbn);
       setValue("title", bookInfo.title);

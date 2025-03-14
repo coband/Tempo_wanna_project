@@ -25,6 +25,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "../ui/collapsible";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 
 // Interface für Suchergebnisse, die von der Supabase-Funktion zurückgegeben werden
 interface SearchBook {
@@ -100,7 +101,8 @@ const loadChatHistory = (): ChatSession[] => {
 
 export function BookChat({ open, onOpenChange }: BookChatProps) {
   // Authentifizierten Supabase-Client vom Hook beziehen
-  const { supabase } = useSupabaseAuth();
+  const { supabase, publicClient } = useSupabaseAuth();
+  const clerkAuth = useClerkAuth();
   // Standardnachricht für den Assistenten
   const defaultMessage = {
     type: 'assistant' as const,
@@ -281,19 +283,60 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       
       console.log('Rufe Edge-Funktion search-books auf...');
       
-      // Edge Function mit JWT Token aufrufen
-      const response = await supabase.functions.invoke('search-books', {
-        body: { query: userMessage.content },
-      });
-      
-      console.log('Edge-Funktion Antwort:', response);
-      
-      if (response.error) {
-        console.error('Function error:', response.error);
-        throw new Error(`Edge-Funktion Fehler: ${JSON.stringify(response.error)}`);
+      // Hole Clerk-Token für Supabase
+      let authToken = null;
+      try {
+        authToken = await clerkAuth.getToken({ template: 'supabase' });
+        console.log('Auth-Token erhalten:', !!authToken);
+      } catch (tokenError) {
+        console.warn('Fehler beim Abrufen des Auth-Tokens:', tokenError);
       }
       
-      const data = response.data;
+      // Manuell die Edge-Funktion aufrufen mit dem Token
+      const functionsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search-books`;
+      
+      let data: any;
+      
+      if (authToken) {
+        // Direkter Aufruf mit fetch
+        try {
+          const fetchResponse = await fetch(functionsUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ query: userMessage.content }),
+          });
+          
+          if (!fetchResponse.ok) {
+            console.error('Function error:', fetchResponse.status, fetchResponse.statusText);
+            throw new Error(`Edge-Funktion Fehler: ${fetchResponse.status} ${fetchResponse.statusText}`);
+          }
+          
+          data = await fetchResponse.json();
+          console.log('Edge-Funktion Antwort:', data);
+        } catch (fetchError) {
+          console.error('Fetch error:', fetchError);
+          throw fetchError;
+        }
+      } else {
+        // Wenn wir keinen Token haben, nutzen wir die Supabase invoke-Methode
+        const supabaseResponse = await publicClient.functions.invoke('search-books', {
+          body: { query: userMessage.content },
+        });
+        
+        console.log('Edge-Funktion Antwort:', supabaseResponse);
+        
+        if (supabaseResponse.error) {
+          console.error('Function error:', supabaseResponse.error);
+          throw new Error(`Edge-Funktion Fehler: ${JSON.stringify(supabaseResponse.error)}`);
+        }
+        
+        data = supabaseResponse.data;
+      }
+      
+      // Verarbeite Daten, unabhängig von der Quelle
       setBooks(data.books || []);
 
       // Antwort des Assistenten hinzufügen

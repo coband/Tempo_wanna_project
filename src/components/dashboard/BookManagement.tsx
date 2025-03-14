@@ -292,11 +292,15 @@ const BookManagement = ({
     setFilteredBooks(result);
   }, [allBooks, searchQuery]);
 
-  const handleSearch = (query: string) => {
+  const handleSearch = (query: string, displayTitle?: string) => {
     setSearchQuery(query);
     
-    // Wenn es eine UUID ist, setze einen benutzerfreundlichen Text, bis das Suchergebnis da ist
-    if (isUUID(query)) {
+    // Wenn ein expliziter Anzeigetitel übergeben wurde, verwende diesen
+    if (displayTitle) {
+      setDisplayQuery(displayTitle);
+    }
+    // Ansonsten, wenn es eine UUID ist, setze einen benutzerfreundlichen Text, bis das Suchergebnis da ist
+    else if (isUUID(query)) {
       setDisplayQuery("Suche nach Buch...");
     } else {
       setDisplayQuery(query);
@@ -334,6 +338,7 @@ const BookManagement = ({
         <SearchHeader
           onSearch={handleSearch}
           books={filteredBooks}
+          allBooks={allBooks}
           isLoading={loading}
           currentQuery={displayQuery}
         />
