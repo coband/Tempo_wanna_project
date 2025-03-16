@@ -127,6 +127,28 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
 
   const handleAdd = async (book: NewBook) => {
     try {
+      // Zuerst prüfen, ob ein Buch mit dieser ISBN bereits existiert
+      const { data: existingBook, error: queryError } = await supabase
+        .from("books")
+        .select("id, title")
+        .eq("isbn", book.isbn)
+        .maybeSingle();
+
+      if (queryError) {
+        console.error("Fehler bei der Prüfung auf bestehendes Buch:", queryError);
+        throw queryError;
+      }
+
+      // Wenn das Buch bereits existiert, zeige eine Fehlermeldung an
+      if (existingBook) {
+        toast({
+          variant: "destructive",
+          title: "Duplikat",
+          description: `Ein Buch mit der ISBN ${book.isbn} existiert bereits: "${existingBook.title}"`
+        });
+        throw new Error(`Ein Buch mit dieser ISBN existiert bereits: ${existingBook.title}`);
+      }
+
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")

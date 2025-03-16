@@ -215,10 +215,40 @@ serve(async (req) => {
             // Buchinformationen erfolgreich erhalten
             const bookInfo = await bookInfoResponse.json();
             
-            // Jetzt direkt in die Datenbank einfügen wie in BookGrid.tsx
+            // Sicherstellen, dass Autor als String und nicht als Array gespeichert wird
+            let authorField = bookInfo.author;
+            if (Array.isArray(authorField)) {
+              authorField = authorField.join(', ');
+            }
+            
+            // Prüfen, ob ein Buch mit dieser ISBN bereits existiert
             const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+            const { data: existingBook, error: queryError } = await adminClient
+              .from("books")
+              .select("id, title")
+              .eq("isbn", isbn)
+              .maybeSingle();
+              
+            if (queryError) {
+              console.error(`Fehler bei der Prüfung auf existierendes Buch mit ISBN ${isbn}:`, queryError);
+              return { status: 'error', isbn, error: `Datenbankfehler: ${queryError.message}` };
+            }
+            
+            // Wenn das Buch bereits existiert, geben wir eine entsprechende Fehlermeldung zurück
+            if (existingBook) {
+              console.log(`Buch mit ISBN ${isbn} existiert bereits: "${existingBook.title}" (ID: ${existingBook.id})`);
+              return { 
+                status: 'error', 
+                isbn, 
+                error: `Dieses Buch existiert bereits in der Datenbank: "${existingBook.title}"`,
+                existingId: existingBook.id
+              };
+            }
+            
+            // Jetzt direkt in die Datenbank einfügen wie in BookGrid.tsx
             const bookEntry = {
               ...bookInfo,
+              author: authorField, // Den korrekt formatierten Autor verwenden
               user_id: userId,
               created_at: new Date().toISOString(),
               available: true,
