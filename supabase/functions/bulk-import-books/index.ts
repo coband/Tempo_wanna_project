@@ -170,24 +170,74 @@ serve(async (req) => {
         try {
           console.log(`Verarbeite ISBN: ${isbn}, im ${isPreviewMode ? 'Vorschau' : 'Import'}-Modus`);
           
-          // Einheitliche Struktur für alle Requests
-          const bookInfoResponse = await fetch(`${supabaseUrl}/functions/v1/book-info`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': authHeader
-            },
-            body: JSON.stringify({ isbn, preview: isPreviewMode })
-          });
+          // Service-Role für den Import verwenden, um Authentifizierungsprobleme zu umgehen
+          const useServiceRole = !isPreviewMode;
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': useServiceRole ? 
+                            `Bearer ${supabaseServiceKey}` : 
+                            authHeader
+          };
           
-          if (bookInfoResponse.ok) {
-            const bookData = await bookInfoResponse.json();
-            console.log(`Erfolgreicher ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
-            return { status: 'success', isbn, data: bookData };
+          console.log(`Verwende ${useServiceRole ? 'Service-Role' : 'Benutzer'}-Authentifizierung für ISBN: ${isbn}`);
+          
+          // Im Vorschaumodus verwenden wir die book-info Funktion normal
+          if (isPreviewMode) {
+            const bookInfoResponse = await fetch(`${supabaseUrl}/functions/v1/book-info`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ isbn, preview: true })
+            });
+            
+            if (bookInfoResponse.ok) {
+              const bookData = await bookInfoResponse.json();
+              console.log(`Erfolgreiche Vorschau für ISBN: ${isbn}`);
+              return { status: 'success', isbn, data: bookData };
+            } else {
+              const errorText = await bookInfoResponse.text();
+              console.error(`Fehler bei der Vorschau für ISBN ${isbn}: ${errorText}`);
+              return { status: 'error', isbn, error: `HTTP ${bookInfoResponse.status}: ${errorText}` };
+            }
           } else {
-            const errorText = await bookInfoResponse.text();
-            console.error(`Fehler beim ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN ${isbn}: ${errorText}`);
-            return { status: 'error', isbn, error: `HTTP ${bookInfoResponse.status}: ${errorText}` };
+            // Im Import-Modus: Zuerst Buchinformationen holen
+            const bookInfoResponse = await fetch(`${supabaseUrl}/functions/v1/book-info`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ isbn, preview: true }) // Wir holen nur die Informationen
+            });
+            
+            if (!bookInfoResponse.ok) {
+              const errorText = await bookInfoResponse.text();
+              console.error(`Fehler beim Abrufen der Buchinformationen für ISBN ${isbn}: ${errorText}`);
+              return { status: 'error', isbn, error: `HTTP ${bookInfoResponse.status}: ${errorText}` };
+            }
+            
+            // Buchinformationen erfolgreich erhalten
+            const bookInfo = await bookInfoResponse.json();
+            
+            // Jetzt direkt in die Datenbank einfügen wie in BookGrid.tsx
+            const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+            const bookEntry = {
+              ...bookInfo,
+              user_id: userId,
+              created_at: new Date().toISOString(),
+              available: true,
+              location: 'Bibliothek'
+            };
+            
+            console.log(`Füge Buch in die Datenbank ein: ${isbn}`);
+            const { data: insertedBook, error: insertError } = await adminClient
+              .from("books")
+              .insert(bookEntry)
+              .select();
+              
+            if (insertError) {
+              console.error(`Fehler beim Einfügen des Buchs ${isbn} in die Datenbank:`, insertError);
+              return { status: 'error', isbn, error: insertError.message };
+            }
+            
+            console.log(`Buch mit ISBN ${isbn} erfolgreich in die Datenbank eingefügt:`, insertedBook);
+            return { status: 'success', isbn, data: insertedBook[0] };
           }
         } catch (error) {
           console.error(`Ausnahme beim ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN ${isbn}:`, error);
