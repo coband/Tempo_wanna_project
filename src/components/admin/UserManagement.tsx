@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   RefreshCw
 } from 'lucide-react';
+import { DashboardHeader } from '../dashboard/DashboardHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -237,296 +238,296 @@ export function UserManagement() {
   }
 
   return (
-    <div className="container py-6 px-4 max-w-6xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">
-            <UserCircle2 className="inline-block mr-2 h-6 w-6 text-blue-600" />
-            Benutzerverwaltung (Clerk)
-          </h1>
-          
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative">
-              <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                type="text"
-                placeholder="Benutzer suchen..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 w-full md:w-64"
-              />
-            </div>
+    <div className="bg-gray-50 min-h-screen">
+      <DashboardHeader />
+      <div className="container py-6 px-4 max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">
+              <UserCircle2 className="inline-block mr-2 h-6 w-6 text-blue-600" />
+              Benutzerverwaltung (Clerk)
+            </h1>
             
-            <Button 
-              variant="outline" 
-              onClick={refreshUsers}
-              className="flex items-center gap-2"
-            >
-              <RefreshCw className="h-4 w-4" /> Aktualisieren
-            </Button>
-          </div>
-        </div>
-        
-        <div className="mb-6">
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="all">Alle Benutzer</TabsTrigger>
-              <TabsTrigger value="admins" onClick={() => setShowAdminsOnly(!showAdminsOnly)}>
-                Administratoren
-              </TabsTrigger>
-              <TabsTrigger value="blocked" onClick={() => setShowBlockedOnly(!showBlockedOnly)}>
-                Gesperrte Benutzer
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          
-          <div className="flex items-center justify-between mb-2 text-sm text-gray-500">
-            <span>{filteredUsers.length} Benutzer gefunden</span>
-            <div className="flex gap-4">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  checked={showAdminsOnly} 
-                  onChange={() => setShowAdminsOnly(!showAdminsOnly)}
-                  className="mr-2"
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="relative">
+                <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  type="text"
+                  placeholder="Benutzer suchen..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 w-full md:w-64"
                 />
-                Nur Administratoren
-              </label>
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  checked={showBlockedOnly} 
-                  onChange={() => setShowBlockedOnly(!showBlockedOnly)}
-                  className="mr-2"
-                />
-                Nur gesperrte Benutzer
-              </label>
+              </div>
+              
+              <Button 
+                variant="outline" 
+                onClick={refreshUsers}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className="h-4 w-4" /> Aktualisieren
+              </Button>
             </div>
           </div>
-        </div>
-      
-        {filteredUsers.length === 0 ? (
-          <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
-            <UserCircle2 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-            <h3 className="text-lg font-medium text-gray-800">Keine Benutzer gefunden</h3>
-            <p className="text-gray-500 mt-1">
-              {searchQuery ? `Es wurden keine Benutzer gefunden, die zu "${searchQuery}" passen.` : 
-                "Es wurden keine Benutzer gefunden, die zu den ausgewählten Filtern passen."}
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-            {filteredUsers.map((userItem) => (
-              <Card 
-                key={userItem.id} 
-                className={`overflow-hidden ${userItem.is_blocked ? "border-red-300 bg-red-50" : ""}`}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg font-medium">{userItem.email}</CardTitle>
-                      <CardDescription>
-                        <div className="flex items-center text-xs text-gray-500 mt-1">
-                          <Calendar className="h-3 w-3 mr-1" />
-                          <span>Erstellt: {new Date(userItem.created_at).toLocaleDateString()}</span>
-                          <Separator orientation="vertical" className="mx-2 h-3" />
-                          <Clock className="h-3 w-3 mr-1" />
-                          <span>
-                            {userItem.last_sign_in_at 
-                              ? `Letzte Anmeldung: ${new Date(userItem.last_sign_in_at).toLocaleDateString()}`
-                              : 'Nie angemeldet'}
-                          </span>
-                        </div>
-                      </CardDescription>
-                    </div>
-                    
-                    <div className="flex gap-1">
-                      {userItem.roles.map(role => (
-                        role && (
-                          <Badge 
-                            key={role}
-                            variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
-                          >
-                            {role === 'superadmin' ? (
-                              <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
-                            ) : role === 'admin' ? (
-                              <><Shield className="h-3 w-3 mr-1" /> Admin</>
-                            ) : (
-                              role
-                            )}
-                          </Badge>
-                        )
-                      ))}
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="pb-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Badge 
-                      variant={userItem.is_blocked ? "destructive" : "default"}
-                      className={`rounded-full px-3 ${!userItem.is_blocked ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}`}
-                    >
-                      {userItem.is_blocked ? (
-                        <><Lock className="h-3 w-3 mr-1" /> Gesperrt</>
-                      ) : (
-                        <><Unlock className="h-3 w-3 mr-1" /> Aktiv</>
-                      )}
-                    </Badge>
-                    
-                    {userItem.is_blocked && userItem.block_reason && (
-                      <span className="text-red-600 text-xs">
-                        Grund: {userItem.block_reason}
-                      </span>
-                    )}
-                  </div>
-                </CardContent>
-                
-                <CardFooter className="pt-3 flex flex-wrap justify-end gap-2 border-t">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant={userItem.roles.includes('admin') ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleToggleAdmin(userItem.id)}
-                          disabled={actionInProgress[userItem.id]}
-                        >
-                          {userItem.roles.includes('admin') ? (
-                            <><XCircle className="h-3.5 w-3.5 mr-1" /> Admin entfernen</>
-                          ) : (
-                            <><CheckCircle className="h-3.5 w-3.5 mr-1" /> Als Admin festlegen</>
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>{userItem.roles.includes('admin') ? 'Admin-Berechtigungen entfernen' : 'Admin-Berechtigungen gewähren'}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  
-                  {isSuperAdmin && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
-                          <SlidersHorizontal className="h-3.5 w-3.5 mr-1" /> Erweiterte Aktionen
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>SuperAdmin Aktionen</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        
-                        <DropdownMenuItem
-                          onClick={() => handleToggleSuperAdmin(userItem.id)}
-                          disabled={actionInProgress[userItem.id]}
-                        >
-                          {userItem.roles.includes('superadmin') ? (
-                            <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-red-500" /> SuperAdmin entfernen</>
-                          ) : (
-                            <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-amber-500" /> Als SuperAdmin festlegen</>
-                          )}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setUserToAction(userItem);
-                            setIsBlockDialogOpen(true);
-                          }}
-                          disabled={actionInProgress[userItem.id]}
-                          className={userItem.is_blocked ? "text-green-600" : "text-red-600"}
-                        >
-                          {userItem.is_blocked ? (
-                            <><Unlock className="h-3.5 w-3.5 mr-2" /> Benutzer entsperren</>
-                          ) : (
-                            <><Lock className="h-3.5 w-3.5 mr-2" /> Benutzer sperren</>
-                          )}
-                        </DropdownMenuItem>
-                        
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setUserToAction(userItem);
-                            setIsResetDialogOpen(true);
-                          }}
-                          disabled={actionInProgress[userItem.id]}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5 mr-2 text-blue-500" /> Anmelde-Link senden
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Block Dialog */}
-      <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {userToAction?.is_blocked ? 'Benutzer entsperren' : 'Benutzer sperren'}
-            </DialogTitle>
-            <DialogDescription>
-              {userToAction?.is_blocked
-                ? `Möchten Sie den Benutzer "${userToAction.email}" entsperren?`
-                : `Geben Sie einen Grund an, warum Sie den Benutzer "${userToAction?.email}" sperren möchten.`
-              }
-            </DialogDescription>
-          </DialogHeader>
           
-          {!userToAction?.is_blocked && (
-            <div className="py-4">
-              <label htmlFor="block-reason" className="block text-sm font-medium mb-2">
-                Sperrgrund (optional)
-              </label>
-              <Input
-                id="block-reason"
-                value={blockReason}
-                onChange={(e) => setBlockReason(e.target.value)}
-                placeholder="z.B. Verstöße gegen Nutzungsbedingungen"
-              />
+          <div className="mb-6">
+            <Tabs 
+              defaultValue="all" 
+              className="w-full"
+              onValueChange={(value) => {
+                if (value === 'all') {
+                  // Alle Filter zurücksetzen
+                  setShowAdminsOnly(false);
+                  setShowBlockedOnly(false);
+                  // Kein refreshUsers mehr, da unnötig
+                } else if (value === 'admins') {
+                  setShowAdminsOnly(true);
+                  setShowBlockedOnly(false);
+                } else if (value === 'blocked') {
+                  setShowBlockedOnly(true);
+                  setShowAdminsOnly(false);
+                }
+              }}
+            >
+              <TabsList className="mb-4">
+                <TabsTrigger value="all">Alle Benutzer</TabsTrigger>
+                <TabsTrigger value="admins">
+                  Administratoren
+                </TabsTrigger>
+                <TabsTrigger value="blocked">
+                  Gesperrte Benutzer
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            
+            <div className="flex items-center justify-between mb-2 text-sm text-gray-500">
+              <span>{filteredUsers.length} Benutzer gefunden</span>
+            </div>
+          </div>
+        
+          {filteredUsers.length === 0 ? (
+            <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
+              <UserCircle2 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+              <h3 className="text-lg font-medium text-gray-800">Keine Benutzer gefunden</h3>
+              <p className="text-gray-500 mt-1">
+                {searchQuery ? `Es wurden keine Benutzer gefunden, die zu "${searchQuery}" passen.` : 
+                  "Es wurden keine Benutzer gefunden, die zu den ausgewählten Filtern passen."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+              {filteredUsers.map((userItem) => (
+                <Card 
+                  key={userItem.id} 
+                  className={`overflow-hidden ${userItem.is_blocked ? "border-red-300 bg-red-50" : ""}`}
+                >
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg font-medium">{userItem.email}</CardTitle>
+                        <CardDescription>
+                          <div className="flex items-center text-xs text-gray-500 mt-1">
+                            <Calendar className="h-3 w-3 mr-1" />
+                            <span>Erstellt: {new Date(userItem.created_at).toLocaleDateString()}</span>
+                            <Separator orientation="vertical" className="mx-2 h-3" />
+                            <Clock className="h-3 w-3 mr-1" />
+                            <span>
+                              {userItem.last_sign_in_at 
+                                ? `Letzte Anmeldung: ${new Date(userItem.last_sign_in_at).toLocaleDateString()}`
+                                : 'Nie angemeldet'}
+                            </span>
+                          </div>
+                        </CardDescription>
+                      </div>
+                      
+                      <div className="flex gap-1">
+                        {userItem.roles.map(role => (
+                          role && (
+                            <Badge 
+                              key={role}
+                              variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
+                            >
+                              {role === 'superadmin' ? (
+                                <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
+                              ) : role === 'admin' ? (
+                                <><Shield className="h-3 w-3 mr-1" /> Admin</>
+                              ) : (
+                                role
+                              )}
+                            </Badge>
+                          )
+                        ))}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardContent className="pb-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Badge 
+                        variant={userItem.is_blocked ? "destructive" : "default"}
+                        className={`rounded-full px-3 ${!userItem.is_blocked ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}`}
+                      >
+                        {userItem.is_blocked ? (
+                          <><Lock className="h-3 w-3 mr-1" /> Gesperrt</>
+                        ) : (
+                          <><Unlock className="h-3 w-3 mr-1" /> Aktiv</>
+                        )}
+                      </Badge>
+                      
+                      {userItem.is_blocked && userItem.block_reason && (
+                        <span className="text-red-600 text-xs">
+                          Grund: {userItem.block_reason}
+                        </span>
+                      )}
+                    </div>
+                  </CardContent>
+                  
+                  <CardFooter className="pt-3 flex flex-wrap justify-end gap-2 border-t">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant={userItem.roles.includes('admin') ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handleToggleAdmin(userItem.id)}
+                            disabled={actionInProgress[userItem.id]}
+                          >
+                            {userItem.roles.includes('admin') ? (
+                              <><XCircle className="h-3.5 w-3.5 mr-1" /> Admin entfernen</>
+                            ) : (
+                              <><CheckCircle className="h-3.5 w-3.5 mr-1" /> Als Admin festlegen</>
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{userItem.roles.includes('admin') ? 'Admin-Berechtigungen entfernen' : 'Admin-Berechtigungen gewähren'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    
+                    {isSuperAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <SlidersHorizontal className="h-3.5 w-3.5 mr-1" /> Erweiterte Aktionen
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>SuperAdmin Aktionen</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          
+                          <DropdownMenuItem
+                            onClick={() => handleToggleSuperAdmin(userItem.id)}
+                            disabled={actionInProgress[userItem.id]}
+                          >
+                            {userItem.roles.includes('superadmin') ? (
+                              <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-red-500" /> SuperAdmin entfernen</>
+                            ) : (
+                              <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-amber-500" /> Als SuperAdmin festlegen</>
+                            )}
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setUserToAction(userItem);
+                              setIsBlockDialogOpen(true);
+                            }}
+                            disabled={actionInProgress[userItem.id]}
+                            className={userItem.is_blocked ? "text-green-600" : "text-red-600"}
+                          >
+                            {userItem.is_blocked ? (
+                              <><Unlock className="h-3.5 w-3.5 mr-2" /> Benutzer entsperren</>
+                            ) : (
+                              <><Lock className="h-3.5 w-3.5 mr-2" /> Benutzer sperren</>
+                            )}
+                          </DropdownMenuItem>
+                          
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setUserToAction(userItem);
+                              setIsResetDialogOpen(true);
+                            }}
+                            disabled={actionInProgress[userItem.id]}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 mr-2 text-blue-500" /> Anmelde-Link senden
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </CardFooter>
+                </Card>
+              ))}
             </div>
           )}
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Abbrechen</Button>
-            </DialogClose>
-            <Button 
-              variant={userToAction?.is_blocked ? "default" : "destructive"}
-              onClick={() => userToAction && handleToggleBlock(userToAction.id, blockReason)}
-            >
-              {userToAction?.is_blocked ? 'Entsperren' : 'Sperren'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Reset Password Dialog */}
-      <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Anmelde-Link senden</DialogTitle>
-            <DialogDescription>
-              Ein Einmal-Anmelde-Link wird an folgende E-Mail-Adresse gesendet: {userToAction?.email}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Abbrechen</Button>
-            </DialogClose>
-            <Button 
-              variant="default"
-              onClick={() => userToAction && handleResetPassword(userToAction.email, userToAction.id)}
-            >
-              Link senden
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+        
+        {/* Block Dialog */}
+        <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {userToAction?.is_blocked ? 'Benutzer entsperren' : 'Benutzer sperren'}
+              </DialogTitle>
+              <DialogDescription>
+                {userToAction?.is_blocked
+                  ? `Möchten Sie den Benutzer "${userToAction.email}" entsperren?`
+                  : `Geben Sie einen Grund an, warum Sie den Benutzer "${userToAction?.email}" sperren möchten.`
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            {!userToAction?.is_blocked && (
+              <div className="py-4">
+                <label htmlFor="block-reason" className="block text-sm font-medium mb-2">
+                  Sperrgrund (optional)
+                </label>
+                <Input
+                  id="block-reason"
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  placeholder="z.B. Verstöße gegen Nutzungsbedingungen"
+                />
+              </div>
+            )}
+            
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Abbrechen</Button>
+              </DialogClose>
+              <Button 
+                variant={userToAction?.is_blocked ? "default" : "destructive"}
+                onClick={() => userToAction && handleToggleBlock(userToAction.id, blockReason)}
+              >
+                {userToAction?.is_blocked ? 'Entsperren' : 'Sperren'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        
+        {/* Reset Password Dialog */}
+        <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Anmelde-Link senden</DialogTitle>
+              <DialogDescription>
+                Ein Einmal-Anmelde-Link wird an folgende E-Mail-Adresse gesendet: {userToAction?.email}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Abbrechen</Button>
+              </DialogClose>
+              <Button 
+                variant="default"
+                onClick={() => userToAction && handleResetPassword(userToAction.email, userToAction.id)}
+              >
+                Link senden
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 } 
