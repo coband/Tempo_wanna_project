@@ -20,6 +20,8 @@ export interface Book {
   school: string;
   type: string;
   publisher: string;
+  embedding: any | null;
+  vector_source: string | null;
 }
 
 export type NewBook = Database["public"]["Tables"]["books"]["Insert"];

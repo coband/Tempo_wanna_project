@@ -209,6 +209,24 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       
       if (error) throw error;
       
+      // Wenn das Embedding neu erstellt werden sollte
+      if (data && data.length > 0 && data[0].embedding === null) {
+        try {
+          console.log("Erstelle Embedding für aktualisiertes Buch:", book.id);
+          const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
+            body: { book_id: book.id }
+          });
+          
+          if (embeddingError) {
+            console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+          } else {
+            console.log("Embedding erfolgreich erstellt:", embeddingData);
+          }
+        } catch (err) {
+          console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
+        }
+      }
+      
       if (onBookChange) onBookChange();
       
       toast({

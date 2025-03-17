@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.8.0"
 import axios from "https://esm.sh/axios@1.8.1"
 import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts"
 
@@ -10,6 +10,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 // OpenAI API Key
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!
+
+// Function Hook Secret
+const FUNCTION_HOOK_SECRET = Deno.env.get("FUNCTION_HOOK_SECRET")!
 
 // Konfiguration für Batch-Verarbeitung
 const BATCH_SIZE = 25 // Anzahl der Bücher, die pro Batch verarbeitet werden (reduziert, da axios verwendet wird)
@@ -36,15 +39,40 @@ function prepareVectorSource(book: any): string {
     }
 }
 
-// Einfache Funktion zur Prüfung des Service-Role-Keys
-function isServiceRoleKeyValid(req: Request): boolean {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return false;
+// Funktion zur Überprüfung des Function-Hook-Secrets
+function isAuthorized(req: Request): boolean {
+    // 1. Prüfe den Function-Hook-Secret
+    const hookSecret = req.headers.get('X-Function-Hook-Secret');
+    if (hookSecret && hookSecret === FUNCTION_HOOK_SECRET) {
+        console.log("Autorisierung erfolgt via Function-Hook-Secret");
+        return true;
     }
     
-    const token = authHeader.split(' ')[1];
-    return token === SUPABASE_SERVICE_ROLE_KEY;
+    // 2. Prüfe den Service-Role-Key
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        
+        if (token === SUPABASE_SERVICE_ROLE_KEY) {
+            console.log("Autorisierung erfolgt via Service-Role-Key");
+            return true;
+        }
+        
+        // 3. Akzeptiere JWT-Tokens (wenn verify_jwt: true)
+        try {
+            if (token.split('.').length === 3) {
+                console.log("Autorisierung erfolgt via JWT-Token");
+                return true;
+            }
+        } catch (error) {
+            console.error("JWT-Token konnte nicht validiert werden:", error);
+        }
+    }
+    
+    console.log("Authorization Header:", req.headers.get('Authorization') ? "Vorhanden" : "Fehlt");
+    console.log("X-Function-Hook-Secret Header:", req.headers.get('X-Function-Hook-Secret') ? "Vorhanden" : "Fehlt");
+    
+    return false;
 }
 
 serve(async (req) => {
@@ -52,14 +80,14 @@ serve(async (req) => {
     const corsResponse = handleCorsPreflightRequest(req);
     if (corsResponse) return corsResponse;
 
-    // Strenge Service-Role-Key Prüfung - Anfragen ohne gültigen Key werden abgelehnt
-    const isValidKey = isServiceRoleKeyValid(req);
-    if (!isValidKey) {
-        console.error("Unerlaubter Zugriff: Kein gültiger Service-Role-Key gefunden");
+    // Überprüfe Autorisierung mit Function-Hook-Secret oder Service-Role-Key
+    const isValid = isAuthorized(req);
+    if (!isValid) {
+        console.error("Unerlaubter Zugriff: Kein gültiger Hook-Secret oder Service-Role-Key gefunden");
         return new Response(
             JSON.stringify({ 
                 error: 'Unerlaubter Zugriff', 
-                message: 'Diese Operation erfordert einen gültigen Service-Role-Key.'
+                message: 'Diese Operation erfordert einen gültigen Hook-Secret oder Service-Role-Key.'
             }),
             {
                 headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
@@ -68,7 +96,7 @@ serve(async (req) => {
         );
     }
     
-    console.log("Service-Role-Key-Authentifizierung erfolgreich");
+    console.log("Authentifizierung erfolgreich");
 
     // Parameter aus der Anfrage extrahieren
     let bookIds: string[] = [];
