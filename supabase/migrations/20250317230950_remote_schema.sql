@@ -153,53 +153,6 @@ $$;
 ALTER FUNCTION "public"."authorize"("requested_permission" "public"."app_permission") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."call_create_embeddings_on_insert"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    AS $$
-BEGIN
-  -- Edge Function mit Service-Rolle-Token aufrufen
-  PERFORM net.http_post(
-    url := 'https://ubvsltrumzoljoaymosc.supabase.co/functions/v1/createEmbeddings',
-    headers := '{
-      "Content-Type": "application/json",
-      "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVidnNsdHJ1bXpvbGpvYXltb3NjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MTY0NDA1MiwiZXhwIjoyMDU3MjIwMDUyfQ.9GqPPxDK09q7D_I-78AkbV-xhSlBc999C9FvoaCpH4c"
-    }',
-    body := jsonb_build_object('book_id', NEW.id)
-  );
-
-  RETURN NEW;
-END;
-$$;
-
-
-ALTER FUNCTION "public"."call_create_embeddings_on_insert"() OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."call_create_embeddings_on_update"() RETURNS "trigger"
-    LANGUAGE "plpgsql" SECURITY DEFINER
-    AS $$
-BEGIN
-  -- Nur ausführen, wenn Embedding NULL ist
-  IF NEW.embedding IS NULL THEN
-    -- Edge Function mit Service-Rolle-Token aufrufen
-    PERFORM net.http_post(
-      url := 'https://ubvsltrumzoljoaymosc.supabase.co/functions/v1/createEmbeddings',
-      headers := '{
-        "Content-Type": "application/json", 
-        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVidnNsdHJ1bXpvbGpvYXltb3NjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MTY0NDA1MiwiZXhwIjoyMDU3MjIwMDUyfQ.9GqPPxDK09q7D_I-78AkbV-xhSlBc999C9FvoaCpH4c"
-      }',
-      body := jsonb_build_object('book_id', NEW.id)
-    );
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
-
-ALTER FUNCTION "public"."call_create_embeddings_on_update"() OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."debug_auth_header"() RETURNS "text"
     LANGUAGE "sql" SECURITY DEFINER
     AS $$
@@ -352,8 +305,7 @@ ALTER FUNCTION "public"."process_book_embedding"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."protect_book_fields"() RETURNS "trigger"
     LANGUAGE "plpgsql"
-    AS $$
-BEGIN
+    AS $$BEGIN
   -- Wenn kein Admin-Benutzer und nicht die eigene Ausleihe
   IF NOT auth.is_clerk_admin() AND 
      (NEW.borrowed_by IS DISTINCT FROM auth.clerk_jwt_claims()->>'user_id' OR 
@@ -375,8 +327,7 @@ BEGIN
   END IF;
   
   RETURN NEW;
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."protect_book_fields"() OWNER TO "postgres";
@@ -394,8 +345,7 @@ ALTER FUNCTION "public"."requesting_user_id"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."reset_embedding_on_update"() RETURNS "trigger"
     LANGUAGE "plpgsql"
-    AS $$
-BEGIN
+    AS $$BEGIN
   -- Prüfen, ob relevante Felder geändert wurden
   IF 
     NEW.title IS DISTINCT FROM OLD.title OR
@@ -427,8 +377,7 @@ BEGIN
   END IF;
   
   RETURN NEW;
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."reset_embedding_on_update"() OWNER TO "postgres";
@@ -526,23 +475,11 @@ CREATE INDEX "books_embedding_idx" ON "public"."books" USING "hnsw" ("embedding"
 
 
 
-CREATE OR REPLACE TRIGGER "on_books_insert" AFTER INSERT ON "public"."books" FOR EACH ROW EXECUTE FUNCTION "public"."call_create_embeddings_on_insert"();
-
-
-
 CREATE OR REPLACE TRIGGER "prevent_non_available_updates" BEFORE UPDATE ON "public"."books" FOR EACH ROW EXECUTE FUNCTION "public"."prevent_non_available_updates"();
 
 
 
 CREATE OR REPLACE TRIGGER "protect_book_fields_trigger" BEFORE UPDATE ON "public"."books" FOR EACH ROW EXECUTE FUNCTION "public"."protect_book_fields"();
-
-
-
-CREATE OR REPLACE TRIGGER "trg_after_books_insert" AFTER INSERT ON "public"."books" FOR EACH ROW EXECUTE FUNCTION "public"."call_create_embeddings_on_insert"();
-
-
-
-CREATE OR REPLACE TRIGGER "trg_after_books_update" AFTER UPDATE ON "public"."books" FOR EACH ROW WHEN (("new"."embedding" IS NULL)) EXECUTE FUNCTION "public"."call_create_embeddings_on_update"();
 
 
 
@@ -4356,18 +4293,6 @@ GRANT ALL ON FUNCTION "public"."binary_quantize"("public"."vector") TO "postgres
 GRANT ALL ON FUNCTION "public"."binary_quantize"("public"."vector") TO "anon";
 GRANT ALL ON FUNCTION "public"."binary_quantize"("public"."vector") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."binary_quantize"("public"."vector") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_insert"() TO "anon";
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_insert"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_insert"() TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_update"() TO "anon";
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_update"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."call_create_embeddings_on_update"() TO "service_role";
 
 
 
