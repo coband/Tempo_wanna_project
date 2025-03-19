@@ -17,17 +17,44 @@ serve(async (req) => {
   console.log("Anfrage-Origin:", origin);
   
   try {
-    // Standard-Benutzer-ID für anonyme Anfragen
-    let userId = "anonymous";
+    // Jetzt implementieren wir eine ordnungsgemäße JWT-Validierung
+    let userId = null;
+    let isAuthenticated = false;
     
     // JWT Token aus dem Authorization Header extrahieren (optional)
     const authHeader = req.headers.get("Authorization");
     
     if (authHeader) {
-      console.log("Authorization Header vorhanden, aber Authentifizierung wird nicht erzwungen");
-      // Wir speichern die Information, dass ein Auth-Header vorhanden war, erzwingen aber keine Validierung
+      try {
+        // Token validieren
+        const token = authHeader.replace("Bearer ", "");
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const { data: userData, error: userError } = await supabase.auth.getUser(token);
+        
+        if (!userError && userData?.user?.id) {
+          userId = userData.user.id;
+          isAuthenticated = true;
+          console.log("Benutzer erfolgreich authentifiziert:", userId);
+        } else {
+          console.log("Token-Validierung fehlgeschlagen:", userError);
+          
+          // Versuche zu erkennen, ob es ein Clerk-Token ist
+          try {
+            // Einfache Struktur-Prüfung für JWT
+            const tokenParts = token.split('.');
+            if (tokenParts.length === 3) {
+              console.log("Das Token hat eine gültige JWT-Struktur. Es könnte ein Clerk-Token sein.");
+              // In einer Produktionsumgebung könnten wir hier Clerk-Token validieren
+            }
+          } catch (jwtError) {
+            console.error("Fehler bei der JWT-Analyse:", jwtError);
+          }
+        }
+      } catch (authError) {
+        console.error("Fehler bei der Authentifizierung:", authError);
+      }
     } else {
-      console.log("Kein Authorization Header vorhanden, setze auf anonymen Benutzer");
+      console.log("Kein Authorization Header vorhanden");
     }
     
     const requestBody = await req.json();
@@ -38,6 +65,21 @@ serve(async (req) => {
     
     console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
     
+    // Für bestimmte Operationen könnten wir Authentifizierung erzwingen
+    // z.B. bei Import-Operationen
+    if (!isPreviewMode && !isAuthenticated) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Authentifizierung erforderlich für den Import-Modus',
+          message: 'Bitte melden Sie sich an, um diese Funktion zu nutzen.'
+        }),
+        {
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+          status: 401,
+        }
+      );
+    }
+
     if (!isbn) {
       return new Response(
         JSON.stringify({
@@ -80,7 +122,7 @@ serve(async (req) => {
           },
           {
             role: "user",
-            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (KiGa, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
+            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
           },
         ],
         max_tokens: 1000,

@@ -22,12 +22,12 @@ serve(async (req) => {
     }
 
     // JWT Token aus dem Authorization Header extrahieren (optional)
-    let userId = "anonymous"; // Standard-User-ID für nicht authentifizierte Anfragen
+    let userId = null; // Kein Standardwert mehr für anonyme Benutzer
     const authHeader = req.headers.get('Authorization');
     
     if (authHeader) {
       try {
-        // Versuchen, das Token zu validieren, aber keinen Fehler werfen, wenn es fehlschlägt
+        // Versuchen, das Token zu validieren
         const token = authHeader.replace("Bearer ", "");
         const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
         const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
@@ -36,15 +36,24 @@ serve(async (req) => {
           userId = userData.user.id;
           console.log("Benutzer erfolgreich authentifiziert:", userId);
         } else {
-          console.log("Token-Validierung fehlgeschlagen, setze auf anonymen Benutzer");
+          console.log("Token-Validierung fehlgeschlagen:", userError);
+          
+          // Authentifizierungsfehler für sensible Operationen
+          // Für die Buchsuche erlauben wir dennoch den Zugriff, beschränken aber ggf. die Ergebnisse
+          console.log("Hinweis: Nur öffentliche Suchergebnisse werden zurückgegeben");
         }
       } catch (authError) {
         console.error("Fehler bei der Authentifizierung:", authError);
-        // Fahre trotzdem fort, auch wenn die Authentifizierung fehlschlägt
+        // Kein Fallback mehr auf anonymen Benutzer
       }
     } else {
-      console.log("Kein Authorization Header vorhanden, setze auf anonymen Benutzer");
+      console.log("Kein Authorization Header vorhanden");
+      // Kein Fallback mehr auf anonymen Benutzer
     }
+    
+    // Für sensible Operationen könnten wir hier eine Authentifizierung erzwingen
+    // Für die Buchsuche erlauben wir jedoch den Zugang auch ohne Authentifizierung
+    // Sensible Buchinformationen könnten später gefiltert werden
 
     // Suchparameter aus dem Request-Body holen
     if (!req.body) {

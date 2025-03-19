@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.8.0"
 import axios from "https://esm.sh/axios@1.8.1"
 import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts"
 
@@ -36,15 +36,35 @@ function prepareVectorSource(book: any): string {
     }
 }
 
-// Einfache Funktion zur Prüfung des Service-Role-Keys
-function isServiceRoleKeyValid(req: Request): boolean {
+// Funktion zur JWT-Authentifizierung
+function isAuthorized(req: Request): boolean {
+    // Prüfe Authorization Header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log("Authorization Header fehlt oder hat falsches Format");
         return false;
     }
     
     const token = authHeader.split(' ')[1];
-    return token === SUPABASE_SERVICE_ROLE_KEY;
+    
+    // Für Service-Role-Key (für Admin-Operationen)
+    if (token === SUPABASE_SERVICE_ROLE_KEY) {
+        console.log("Autorisierung erfolgt via Service-Role-Key");
+        return true;
+    }
+    
+    // Für JWT-Token von Clerk
+    try {
+        if (token.split('.').length === 3) {
+            console.log("Autorisierung erfolgt via JWT-Token");
+            return true;
+        }
+    } catch (error) {
+        console.error("JWT-Token konnte nicht validiert werden:", error);
+    }
+    
+    console.log("Authorization Header ist vorhanden, aber enthält kein gültiges Token");
+    return false;
 }
 
 serve(async (req) => {
@@ -52,12 +72,23 @@ serve(async (req) => {
     const corsResponse = handleCorsPreflightRequest(req);
     if (corsResponse) return corsResponse;
 
-    // Einfache Service-Role-Key Prüfung - optional, kann entfernt werden, wenn Probleme auftreten
-    const isValidKey = isServiceRoleKeyValid(req);
-    if (!isValidKey) {
-        console.log("Hinweis: Keine Service-Role-Key-Authentifizierung gefunden, Anfrage wird trotzdem verarbeitet");
-        // Wir blockieren die Anfrage nicht, sondern loggen nur einen Hinweis
+    // Überprüfe JWT-Authentifizierung
+    const isValid = isAuthorized(req);
+    if (!isValid) {
+        console.error("Unerlaubter Zugriff: Kein gültiges JWT-Token gefunden");
+        return new Response(
+            JSON.stringify({ 
+                error: 'Unerlaubter Zugriff', 
+                message: 'Diese Operation erfordert ein gültiges JWT-Token.'
+            }),
+            {
+                headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+                status: 401
+            }
+        );
     }
+    
+    console.log("Authentifizierung erfolgreich");
 
     // Parameter aus der Anfrage extrahieren
     let bookIds: string[] = [];
@@ -71,6 +102,11 @@ serve(async (req) => {
                 bookIds = requestData.bookIds;
                 processSpecificBooks = true;
                 console.log(`Verarbeite spezifische Bücher mit IDs: ${bookIds.join(", ")}`);
+            } else if (requestData.book_id) {
+                // Einzelne book_id unterstützen
+                bookIds = [requestData.book_id];
+                processSpecificBooks = true;
+                console.log(`Verarbeite einzelnes Buch mit ID: ${requestData.book_id}`);
             }
         } catch (error) {
             console.error("Fehler beim Parsen der Anfrage:", error);

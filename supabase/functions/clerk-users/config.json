@@ -1,19 +1,17 @@
 {
   "functions": [
     {
-      "name": "book-info",
+      "name": "clerk-users",
       "verify_jwt": true,
       "import_map": "./import_map.json"
     }
   ],
   "external_env": [
-    "OPENAI_KEY",
-    "OPENAI_API_KEY",
+    "CLERK_SECRET_KEY",
     "VITE_SUPABASE_URL",
     "VITE_SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "PERPLEXITY_API_KEY"
+    "SUPABASE_SERVICE_ROLE_KEY"
   ]
 } 

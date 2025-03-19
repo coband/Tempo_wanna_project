@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Camera, ChevronDown } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
@@ -22,6 +22,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
 import { useAuth } from "@/lib/auth";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { fetchBookInfo } from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -45,14 +46,18 @@ export function BookForm({
   onOpenChange,
   onSubmit,
 }: BookFormProps) {
+  const [book, setBook] = useState<Book | null>(initialBook || null);
   const [isLoading, setIsLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoadingBookInfo, setIsLoadingBookInfo] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const clerkAuth = useClerkAuth();
 
-  const { register, handleSubmit, control, reset, setValue, getValues } =
-    useForm<NewBook>();
+  const { register, handleSubmit, control, reset, setValue, getValues, formState } =
+    useForm<NewBook>({
+      mode: "onChange"
+    });
   
   // Referenz für die Dialog-Inhalts-Komponente
   const dialogContentRef = React.useRef<HTMLDivElement>(null);
@@ -76,7 +81,7 @@ export function BookForm({
     if (open) {
       // Nur wenn der Dialog geöffnet wird
       if (initialBook) {
-        reset({
+        const formValues = {
           title: initialBook.title,
           author: initialBook.author,
           isbn: initialBook.isbn,
@@ -87,9 +92,17 @@ export function BookForm({
           available: initialBook.available,
           description: initialBook.description || "",
           school: initialBook.school || "Chriesiweg",
-          type: initialBook.type || "Lehrmittel",
+          type: initialBook.type,
           publisher: initialBook.publisher || "",
-        });
+        };
+        
+        reset(formValues);
+        
+        // Explizit die Subject- und Type-Felder aktualisieren
+        setTimeout(() => {
+          setValue("subject", initialBook.subject, { shouldValidate: true });
+          setValue("type", initialBook.type, { shouldValidate: true });
+        }, 100);
       } else {
         reset({
           title: "",
@@ -102,15 +115,15 @@ export function BookForm({
           available: true,
           description: "",
           school: "Chriesiweg",
-          type: "Lehrmittel",
+          type: "Lesebuch",
           publisher: "",
         });
       }
       
       // Fokus setzen nach dem Zurücksetzen des Formulars
-      setTimeout(ensureDialogSharpness, 10);
+      setTimeout(ensureDialogSharpness, 50);
     }
-  }, [initialBook, reset, open]);
+  }, [initialBook, reset, open, setValue]);
 
   // Funktion zum Abbrechen und Zurücksetzen
   const handleCancel = () => {
@@ -125,7 +138,7 @@ export function BookForm({
       available: true,
       description: "",
       school: "Chriesiweg",
-      type: "Lehrmittel",
+      type: "Lesebuch",
       publisher: "",
     });
     onOpenChange(false);
@@ -161,26 +174,107 @@ export function BookForm({
     }
   };
 
+  // Dynamische Buchlisten für bessere Kompatibilität mit API-Werten
+  const availableBookTypes = useMemo(() => {
+    // Standardtypen aus der Konstante
+    const types = [...BOOK_TYPES];
+    
+    // Wenn ein Buch-Typ aus API nicht in der Liste ist, fügen wir ihn hinzu
+    if (initialBook?.type && !types.includes(initialBook.type)) {
+      types.push(initialBook.type);
+    }
+    
+    return types;
+  }, [initialBook?.type]);
+  
+  // Dynamische Fächer-Liste
+  const availableSubjects = useMemo(() => {
+    // Standardfächer aus der Konstante
+    const subjects = [...SUBJECTS];
+    
+    // Wenn ein Fach aus API nicht in der Liste ist, fügen wir es hinzu
+    if (initialBook?.subject && !subjects.includes(initialBook.subject)) {
+      subjects.push(initialBook.subject);
+    }
+    
+    return subjects;
+  }, [initialBook?.subject]);
+
+  // Hilfsfunktion zum forcieren der Formularaktualisierung
+  const updateFormFields = (bookInfo: any) => {
+    // Für Buchtyp: Nur "Lehrmittel" mit "Lesebuch" ersetzen, sonst den Original-Wert verwenden
+    const bookType = bookInfo.type === "Lehrmittel" 
+      ? "Lesebuch" 
+      : (bookInfo.type || "");
+    
+    // Temporär zuweisen zur weiteren Verwendung 
+    const tmpSubject = bookInfo.subject || "";
+    const tmpType = bookType;
+    
+    // Wenn der Typ oder das Fach nicht in der verfügbaren Liste ist, aktualisieren wir die Listen
+    if (tmpType && !availableBookTypes.includes(tmpType)) {
+      availableBookTypes.push(tmpType);
+    }
+    
+    if (tmpSubject && !availableSubjects.includes(tmpSubject)) {
+      availableSubjects.push(tmpSubject);
+    }
+    
+    // Werte setzen
+    setValue("isbn", bookInfo.isbn || "");
+    setValue("title", bookInfo.title || "");
+    setValue("author", bookInfo.author || "");
+    setValue("subject", tmpSubject);
+    setValue("level", bookInfo.level || "");
+    setValue("year", bookInfo.year || new Date().getFullYear());
+    setValue("location", bookInfo.location || "Bibliothek");
+    setValue("description", bookInfo.description || "");
+    setValue("type", tmpType);
+    setValue("school", bookInfo.school || "Chriesiweg");
+    setValue("publisher", bookInfo.publisher || "");
+    
+    // Manuelle Aktualisierung erzwingen
+    ["subject", "type"].forEach(fieldName => {
+      setValue(fieldName as any, getValues(fieldName as any), { 
+        shouldDirty: true, 
+        shouldTouch: true,
+        shouldValidate: true 
+      });
+    });
+    
+    // Fokus setzen
+    setTimeout(ensureDialogSharpness, 50);
+  };
+
   const handleScan = async (isbn: string) => {
     setIsLoadingBookInfo(true);
     try {
-      console.log("Fetching book info for ISBN:", isbn);
-      const bookInfo = await fetchBookInfo(isbn);
-      console.log("Received book info:", bookInfo);
-      setValue("isbn", bookInfo.isbn);
-      setValue("title", bookInfo.title);
-      setValue("author", bookInfo.author);
-      setValue("subject", bookInfo.subject);
-      setValue("level", bookInfo.level);
-      setValue("year", bookInfo.year);
-      setValue("location", bookInfo.location);
-      setValue("description", bookInfo.description);
-      setValue("type", bookInfo.type || "Lehrmittel");
-      setValue("school", bookInfo.school || "Chriesiweg");
-      setValue("publisher", bookInfo.publisher || "");
+      // Hole Clerk-Token für Supabase
+      let authToken = null;
+      try {
+        authToken = await clerkAuth.getToken({ template: 'supabase' });
+      } catch (tokenError) {
+        console.warn("Fehler beim Abrufen des Auth-Tokens:", tokenError);
+        // Wir fahren trotzdem fort, fetchBookInfo wird dann den anon key verwenden
+      }
       
-      // Nach dem Laden der Buchinfo Fokus setzen
-      setTimeout(ensureDialogSharpness, 10);
+      const bookInfo = await fetchBookInfo(isbn, authToken);
+      
+      // Aktualisiere die verfügbaren Listen, bevor das Formular aktualisiert wird
+      if (bookInfo.type && !availableBookTypes.includes(bookInfo.type)) {
+        // Da availableBookTypes ein useMemo ist, müssen wir die Liste manuell erweitern
+        const newType = bookInfo.type === "Lehrmittel" ? "Lesebuch" : bookInfo.type;
+        if (!availableBookTypes.includes(newType)) {
+          availableBookTypes.push(newType);
+        }
+      }
+      
+      if (bookInfo.subject && !availableSubjects.includes(bookInfo.subject)) {
+        availableSubjects.push(bookInfo.subject);
+      }
+      
+      // Formularfelder mit den erhaltenen Daten aktualisieren
+      updateFormFields(bookInfo);
       
       toast({
         title: "Buchinformationen geladen",
@@ -201,7 +295,7 @@ export function BookForm({
       setShowScanner(false);
       
       // Nach dem Schließen des Scanners Fokus setzen
-      setTimeout(ensureDialogSharpness, 10);
+      setTimeout(ensureDialogSharpness, 50);
     }
   };
 
@@ -295,7 +389,7 @@ export function BookForm({
                     <SelectValue placeholder="Fach auswählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {SUBJECTS.map((subject) => (
+                    {availableSubjects.map((subject) => (
                       <SelectItem key={subject} value={subject}>
                         {subject}
                       </SelectItem>
@@ -383,12 +477,12 @@ export function BookForm({
               control={control}
               rules={{ required: "Buchtyp ist erforderlich" }}
               render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value || "Lehrmittel"}>
+                <Select onValueChange={field.onChange} value={field.value}>
                   <SelectTrigger>
                     <SelectValue placeholder="Buchtyp auswählen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {BOOK_TYPES.map((type) => (
+                    {availableBookTypes.map((type) => (
                       <SelectItem key={type} value={type}>
                         {type}
                       </SelectItem>

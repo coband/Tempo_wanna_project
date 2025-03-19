@@ -4,7 +4,7 @@ const getApiKey = () => {
   return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 };
 
-export async function fetchBookInfo(isbn: string) {
+export async function fetchBookInfo(isbn: string, authToken?: string) {
   try {
     // URL für Edge-Funktionen aus Umgebungsvariablen
     const functionsUrl = import.meta.env.VITE_SUPABASE_URL ? 
@@ -15,13 +15,13 @@ export async function fetchBookInfo(isbn: string) {
       throw new Error("Supabase URL is not configured");
     }
 
-    // API Key holen
-    const apiKey = getApiKey();
+    // API Key holen - verwende authToken falls vorhanden
+    const apiKey = authToken || getApiKey();
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      // Authentifizierungsheader hinzufügen - wir verwenden den anonymen API-Key
+      // Authentifizierungsheader hinzufügen - wir verwenden den Token oder den anonymen API-Key
       "Authorization": `Bearer ${apiKey}`,
       // x-client-info header hinzufügen für Supabase
       "x-client-info": "@supabase/auth-helpers-nextjs"
@@ -40,10 +40,14 @@ export async function fetchBookInfo(isbn: string) {
 
     const data = await response.json();
     console.log("Raw API Response:", data);
-
+    
     if (!data) {
       throw new Error("No data returned from function");
     }
+
+    // Debugging für Buchtyp und Fach
+    console.log("API returned type:", data.type);
+    console.log("API returned subject:", data.subject);
 
     return {
       title: data.title || "",
@@ -52,12 +56,12 @@ export async function fetchBookInfo(isbn: string) {
       level: data.level || "",
       subject: data.subject || "",
       year: data.year ? parseInt(data.year) : new Date().getFullYear(),
-      location: data.location || "Bibliothek", // Default value
-      available: true, // Default value
+      location: data.location || "Bibliothek",
+      available: true,
       description: data.description || "",
-      type: data.type || "Lehrmittel", // Neues Feld
-      school: data.school || "Chriesiweg", // Neues Feld
-      publisher: data.publisher || "", // Verlagsfeld hinzufügen
+      type: data.type || "",
+      school: data.school || "Chriesiweg",
+      publisher: data.publisher || "",
     };
   } catch (error) {
     console.error("Error fetching book info:", error);

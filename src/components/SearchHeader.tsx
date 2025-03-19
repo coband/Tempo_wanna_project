@@ -20,8 +20,9 @@ import {
 
 interface SearchHeaderProps {
   className?: string;
-  onSearch?: (query: string) => void;
+  onSearch?: (query: string, displayTitle?: string) => void;
   books?: any[];
+  allBooks?: any[];  // Alle verfügbaren Bücher für die Live-Suche
   isLoading?: boolean;
   currentQuery?: string;
 }
@@ -30,6 +31,7 @@ const SearchHeader = ({
   className = "",
   onSearch = () => {},
   books = [],
+  allBooks = [],  // Standardwert für allBooks
   isLoading = false,
   currentQuery = "",
 }: SearchHeaderProps) => {
@@ -56,7 +58,10 @@ const SearchHeader = ({
 
   // Filter books for the command dialog based on input value
   const filteredSuggestions = useMemo(() => {
-    if (!commandInputValue.trim()) return books;
+    // Verwende allBooks statt books für Vorschläge in der Live-Suche
+    const sourceBooks = allBooks.length > 0 ? allBooks : books;
+    
+    if (!commandInputValue.trim()) return sourceBooks;
     
     const query = commandInputValue.toLowerCase().trim();
     const normalizedQuery = normalizeISBN(query);
@@ -66,7 +71,7 @@ const SearchHeader = ({
     
     if (looksLikeISBN) {
       // Suche nach ISBN mit oder ohne Bindestriche
-      const isbnMatches = books.filter(book => {
+      const isbnMatches = sourceBooks.filter(book => {
         if (!book.isbn) return false;
         const normalizedBookISBN = normalizeISBN(book.isbn);
         return normalizedBookISBN.includes(normalizedQuery);
@@ -84,7 +89,7 @@ const SearchHeader = ({
     
     // If it looks like a publisher, prioritize publisher matches
     if (mightBePublisher) {
-      const publisherMatches = books.filter(book => 
+      const publisherMatches = sourceBooks.filter(book => 
         book.publisher && book.publisher.toLowerCase().includes(query)
       );
       
@@ -95,7 +100,7 @@ const SearchHeader = ({
     }
     
     // Otherwise do normal filtering for title, author, etc.
-    return books.filter(book => {
+    return sourceBooks.filter(book => {
       // Spezielle Behandlung für ISBN, falls es eine teilweise ISBN-Übereinstimmung geben könnte
       if (book.isbn) {
         const normalizedBookISBN = normalizeISBN(book.isbn);
@@ -117,7 +122,7 @@ const SearchHeader = ({
       
       return searchableFields.some(field => field.includes(query));
     });
-  }, [books, commandInputValue]);
+  }, [books, allBooks, commandInputValue]);
 
   const handleSearch = () => {
     // Nur suchen, wenn es einen Suchbegriff gibt
@@ -254,16 +259,18 @@ const SearchHeader = ({
                       // Präzise Suche durchführen
                       if (book.id) {
                         // Wenn die ID verfügbar ist, nach dieser suchen (genauester Treffer)
-                        console.log("Selecting book by ID:", book.id);
-                        onSearch(book.id);
+                        console.log("Selecting book by ID:", book.id, "with title:", book.title);
+                        
+                        // Die ID für die Suche übergeben, aber in der Anzeige den Buchtitel verwenden
+                        onSearch(book.id, book.title);
                       } else if (book.title && book.author) {
                         // Wenn kein ID, aber Titel und Autor, suche mit genauerer Abfrage
                         console.log("Selecting book by title and author:", book.title, book.author);
-                        onSearch(`"${book.title}" ${book.author}`);
+                        onSearch(`"${book.title}" ${book.author}`, book.title);
                       } else {
                         // Fallback auf normale Titelsuche
                         console.log("Selecting book by title only:", book.title);
-                        onSearch(book.title);
+                        onSearch(book.title, book.title);
                       }
                     };
                     

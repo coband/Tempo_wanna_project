@@ -127,6 +127,28 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
 
   const handleAdd = async (book: NewBook) => {
     try {
+      // Zuerst prüfen, ob ein Buch mit dieser ISBN bereits existiert
+      const { data: existingBook, error: queryError } = await supabase
+        .from("books")
+        .select("id, title")
+        .eq("isbn", book.isbn)
+        .maybeSingle();
+
+      if (queryError) {
+        console.error("Fehler bei der Prüfung auf bestehendes Buch:", queryError);
+        throw queryError;
+      }
+
+      // Wenn das Buch bereits existiert, zeige eine Fehlermeldung an
+      if (existingBook) {
+        toast({
+          variant: "destructive",
+          title: "Duplikat",
+          description: `Ein Buch mit der ISBN ${book.isbn} existiert bereits: "${existingBook.title}"`
+        });
+        throw new Error(`Ein Buch mit dieser ISBN existiert bereits: ${existingBook.title}`);
+      }
+
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")
@@ -186,6 +208,24 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         .select();
       
       if (error) throw error;
+      
+      // Wenn das Embedding neu erstellt werden sollte
+      if (data && data.length > 0 && data[0].embedding === null) {
+        try {
+          console.log("Erstelle Embedding für aktualisiertes Buch:", book.id);
+          const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
+            body: { book_id: book.id }
+          });
+          
+          if (embeddingError) {
+            console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+          } else {
+            console.log("Embedding erfolgreich erstellt:", embeddingData);
+          }
+        } catch (err) {
+          console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
+        }
+      }
       
       if (onBookChange) onBookChange();
       
