@@ -14,6 +14,9 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     params: {
       eventsPerSecond: 10
     }
+  },
+  auth: {
+    persistSession: false
   }
 });
 
