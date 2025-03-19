@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { 
-  listUsers, 
-  toggleUserRole, 
-  toggleUserBlock, 
-  resetUserPassword,
   User,
 } from '@/lib/user-management';
 import { 
@@ -56,6 +53,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export function UserManagement() {
   const { user, isAdmin, isSuperAdmin } = useAuth();
+  const { supabase } = useSupabaseAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,15 +75,106 @@ export function UserManagement() {
     }
   }, []);
 
+  // Benutzer von Clerk abrufen
+  const fetchUsers = async () => {
+    try {
+      console.log("Benutzer werden von Clerk abgerufen...");
+      const { data, error } = await supabase.functions.invoke('clerk-users', {
+        body: { action: 'list-users' }
+      });
+      
+      if (error) throw error;
+      
+      console.log("Benutzer empfangen:", data.users);
+      return data.users;
+    } catch (error) {
+      console.error("Fehler beim Abrufen der Benutzer:", error);
+      throw error;
+    }
+  };
+  
+  // Admin-Rolle umschalten
+  const toggleUserAdmin = async (userId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('clerk-users', {
+        body: {
+          action: 'toggle-role',
+          userId,
+          role: 'admin'
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error("Fehler beim Umschalten der Admin-Rolle:", error);
+      throw error;
+    }
+  };
+  
+  // SuperAdmin-Rolle umschalten
+  const toggleUserSuperAdmin = async (userId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('clerk-users', {
+        body: {
+          action: 'toggle-role',
+          userId,
+          role: 'superadmin'
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error("Fehler beim Umschalten der SuperAdmin-Rolle:", error);
+      throw error;
+    }
+  };
+  
+  // Benutzer sperren/entsperren
+  const blockUnblockUser = async (userId: string, reason?: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('clerk-users', {
+        body: {
+          action: 'toggle-block',
+          userId,
+          reason
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error("Fehler beim Sperren/Entsperren des Benutzers:", error);
+      throw error;
+    }
+  };
+  
+  // Passwort zurücksetzen
+  const resetPassword = async (email: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('clerk-users', {
+        body: {
+          action: 'reset-password',
+          email
+        }
+      });
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error("Fehler beim Zurücksetzen des Passworts:", error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
 
     const fetchData = async () => {
       setLoading(true);
       try {
-        console.log("Benutzer werden von Clerk abgerufen...");
-        const users = await listUsers();
-        console.log("Benutzer empfangen:", users);
+        const users = await fetchUsers();
         setUsers(users);
         setFilteredUsers(users);
       } catch (error) {
@@ -132,10 +221,10 @@ export function UserManagement() {
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
       
-      await toggleUserRole(userId, 'admin');
+      await toggleUserAdmin(userId);
       
       // Benutzerliste aktualisieren
-      const updatedUsers = await listUsers();
+      const updatedUsers = await fetchUsers();
       setUsers(updatedUsers);
     } catch (err) {
       setError(err.message || 'Fehler beim Verwalten der Admin-Rolle');
@@ -149,10 +238,10 @@ export function UserManagement() {
     
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
-      await toggleUserRole(userId, 'superadmin');
+      await toggleUserSuperAdmin(userId);
       
       // Benutzerliste aktualisieren
-      const updatedUsers = await listUsers();
+      const updatedUsers = await fetchUsers();
       setUsers(updatedUsers);
     } catch (err) {
       setError(err.message || 'Fehler beim Ändern der SuperAdmin-Rolle');
@@ -167,12 +256,12 @@ export function UserManagement() {
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
       
-      await toggleUserBlock(userId, reason);
+      await blockUnblockUser(userId, reason);
       setBlockReason('');
       setIsBlockDialogOpen(false);
       
       // Benutzerliste aktualisieren
-      const updatedUsers = await listUsers();
+      const updatedUsers = await fetchUsers();
       setUsers(updatedUsers);
     } catch (err) {
       setError(err.message || 'Fehler beim Sperren/Entsperren des Benutzers');
@@ -186,7 +275,7 @@ export function UserManagement() {
     
     try {
       setActionInProgress(prev => ({ ...prev, [userId]: true }));
-      await resetUserPassword(email);
+      await resetPassword(email);
       setIsResetDialogOpen(false);
       alert(`Ein Anmelde-Link wurde an ${email} gesendet.`);
     } catch (err) {
@@ -199,7 +288,7 @@ export function UserManagement() {
   const refreshUsers = async () => {
     setLoading(true);
     try {
-      const updatedUsers = await listUsers();
+      const updatedUsers = await fetchUsers();
       setUsers(updatedUsers);
     } catch (err) {
       setError(err.message || 'Fehler beim Aktualisieren der Benutzerdaten');

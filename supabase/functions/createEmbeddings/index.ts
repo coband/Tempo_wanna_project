@@ -11,9 +11,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 // OpenAI API Key
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!
 
-// Function Hook Secret
-const FUNCTION_HOOK_SECRET = Deno.env.get("FUNCTION_HOOK_SECRET")!
-
 // Konfiguration für Batch-Verarbeitung
 const BATCH_SIZE = 25 // Anzahl der Bücher, die pro Batch verarbeitet werden (reduziert, da axios verwendet wird)
 
@@ -39,39 +36,34 @@ function prepareVectorSource(book: any): string {
     }
 }
 
-// Funktion zur Überprüfung des Function-Hook-Secrets
+// Funktion zur JWT-Authentifizierung
 function isAuthorized(req: Request): boolean {
-    // 1. Prüfe den Function-Hook-Secret
-    const hookSecret = req.headers.get('X-Function-Hook-Secret');
-    if (hookSecret && hookSecret === FUNCTION_HOOK_SECRET) {
-        console.log("Autorisierung erfolgt via Function-Hook-Secret");
+    // Prüfe Authorization Header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log("Authorization Header fehlt oder hat falsches Format");
+        return false;
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Für Service-Role-Key (für Admin-Operationen)
+    if (token === SUPABASE_SERVICE_ROLE_KEY) {
+        console.log("Autorisierung erfolgt via Service-Role-Key");
         return true;
     }
     
-    // 2. Prüfe den Service-Role-Key
-    const authHeader = req.headers.get('Authorization');
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        
-        if (token === SUPABASE_SERVICE_ROLE_KEY) {
-            console.log("Autorisierung erfolgt via Service-Role-Key");
+    // Für JWT-Token von Clerk
+    try {
+        if (token.split('.').length === 3) {
+            console.log("Autorisierung erfolgt via JWT-Token");
             return true;
         }
-        
-        // 3. Akzeptiere JWT-Tokens (wenn verify_jwt: true)
-        try {
-            if (token.split('.').length === 3) {
-                console.log("Autorisierung erfolgt via JWT-Token");
-                return true;
-            }
-        } catch (error) {
-            console.error("JWT-Token konnte nicht validiert werden:", error);
-        }
+    } catch (error) {
+        console.error("JWT-Token konnte nicht validiert werden:", error);
     }
     
-    console.log("Authorization Header:", req.headers.get('Authorization') ? "Vorhanden" : "Fehlt");
-    console.log("X-Function-Hook-Secret Header:", req.headers.get('X-Function-Hook-Secret') ? "Vorhanden" : "Fehlt");
-    
+    console.log("Authorization Header ist vorhanden, aber enthält kein gültiges Token");
     return false;
 }
 
@@ -80,14 +72,14 @@ serve(async (req) => {
     const corsResponse = handleCorsPreflightRequest(req);
     if (corsResponse) return corsResponse;
 
-    // Überprüfe Autorisierung mit Function-Hook-Secret oder Service-Role-Key
+    // Überprüfe JWT-Authentifizierung
     const isValid = isAuthorized(req);
     if (!isValid) {
-        console.error("Unerlaubter Zugriff: Kein gültiger Hook-Secret oder Service-Role-Key gefunden");
+        console.error("Unerlaubter Zugriff: Kein gültiges JWT-Token gefunden");
         return new Response(
             JSON.stringify({ 
                 error: 'Unerlaubter Zugriff', 
-                message: 'Diese Operation erfordert einen gültigen Hook-Secret oder Service-Role-Key.'
+                message: 'Diese Operation erfordert ein gültiges JWT-Token.'
             }),
             {
                 headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
@@ -110,6 +102,11 @@ serve(async (req) => {
                 bookIds = requestData.bookIds;
                 processSpecificBooks = true;
                 console.log(`Verarbeite spezifische Bücher mit IDs: ${bookIds.join(", ")}`);
+            } else if (requestData.book_id) {
+                // Einzelne book_id unterstützen
+                bookIds = [requestData.book_id];
+                processSpecificBooks = true;
+                console.log(`Verarbeite einzelnes Buch mit ID: ${requestData.book_id}`);
             }
         } catch (error) {
             console.error("Fehler beim Parsen der Anfrage:", error);

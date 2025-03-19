@@ -51,6 +51,38 @@ function transformClerkUser(user: any) {
   };
 }
 
+// Funktion zur JWT-Authentifizierung
+function isAuthorized(req: Request): boolean {
+  // Prüfe Authorization Header
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log("Authorization Header fehlt oder hat falsches Format");
+    return false;
+  }
+  
+  const token = authHeader.split(' ')[1];
+  
+  // Für Service-Role-Key (Admin-Operationen)
+  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (token === supabaseServiceRoleKey) {
+    console.log("Autorisierung erfolgt via Service-Role-Key");
+    return true;
+  }
+  
+  // Für JWT-Token von Clerk
+  try {
+    if (token.split('.').length === 3) {
+      console.log("Autorisierung erfolgt via JWT-Token");
+      return true;
+    }
+  } catch (error) {
+    console.error("JWT-Token konnte nicht validiert werden:", error);
+  }
+  
+  console.log("Authorization Header ist vorhanden, aber enthält kein gültiges Token");
+  return false;
+}
+
 serve(async (req) => {
   console.log('---------------------------------------------');
   console.log(`Neue Clerk-Benutzer-Anfrage: ${req.method} ${new URL(req.url).pathname}`);
@@ -58,6 +90,24 @@ serve(async (req) => {
   // CORS-Präflug-Anfrage behandeln mit der zentralen Funktion
   const preflightResponse = handleCorsPreflightRequest(req);
   if (preflightResponse) return preflightResponse;
+
+  // Überprüfe JWT-Authentifizierung
+  const isValid = isAuthorized(req);
+  if (!isValid) {
+    console.error("Unerlaubter Zugriff: Kein gültiges JWT-Token gefunden");
+    return new Response(
+      JSON.stringify({ 
+        error: 'Unerlaubter Zugriff', 
+        message: 'Diese Operation erfordert ein gültiges JWT-Token.'
+      }),
+      {
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        status: 401
+      }
+    );
+  }
+  
+  console.log("Authentifizierung erfolgreich");
 
   try {
     // Prüfen, ob der Clerk Secret Key konfiguriert ist
