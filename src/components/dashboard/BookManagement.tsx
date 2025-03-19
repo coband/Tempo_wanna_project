@@ -111,14 +111,16 @@ const BookManagement = ({
     }
   };
 
-  // Optimierte useEffect für Buchladung
+  // Füge diese Realtime-Verbindung hinzu, um bei Änderungen automatisch zu aktualisieren
   useEffect(() => {
     if (clientLoading) return;
     
-    let debounceTimer: ReturnType<typeof setTimeout>;
+    console.log("Initialisiere Realtime-Verbindung...");
     
     // Eine Referenz auf den aktuellen Suchzustand für den Closure
     const currentSearchQuery = searchQuery;
+    
+    let debounceTimer: ReturnType<typeof setTimeout>;
     
     // Nur laden, wenn keine UUID-Suche aktiv ist oder gar keine Suche
     const shouldFetch = !isUUID(currentSearchQuery) || !currentSearchQuery.trim();
@@ -130,30 +132,56 @@ const BookManagement = ({
       }, currentSearchQuery ? 300 : 0); // Verzögerung nur bei Suchbegriffen
     }
     
-    // Echtzeit-Abonnement für Änderungen an Büchern
-    const channel = supabase
-      .channel('bookChanges')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'books',
-        },
-        (payload) => {
-          console.log('Realtime change:', payload);
-          // Bei Änderungen erneut laden, aber nur, wenn keine Suche aktiv ist und nicht während einer Einzelbuchansicht
-          if (!currentSearchQuery && !isFiltered) {
-            fetchBooks();
-          }
-        }
-      )
-      .subscribe();
+    // Funktion zum Einrichten des Channels
+    const setupRealtimeChannel = () => {
+      try {
+        const channel = supabase
+          .channel('books-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'books',
+            },
+            (payload) => {
+              console.log('Realtime change:', payload);
+              // Bei Änderungen erneut laden, aber nur, wenn keine Suche aktiv ist und nicht während einer Einzelbuchansicht
+              if (!currentSearchQuery && !isFiltered) {
+                fetchBooks();
+              }
+            }
+          )
+          .subscribe((status) => {
+            console.log(`Realtime subscription status: ${status}`);
+            
+            if (status === 'SUBSCRIBED') {
+              console.log('Erfolgreich an Echtzeit-Updates für books-Tabelle angemeldet');
+            } else if (status === 'CHANNEL_ERROR') {
+              console.error('Fehler bei der Realtime-Verbindung, versuche erneut in 5s...');
+              setTimeout(() => {
+                supabase.removeChannel(channel);
+                setupRealtimeChannel();
+              }, 5000);
+            }
+          });
+        
+        return channel;
+      } catch (error) {
+        console.error('Fehler beim Einrichten des Realtime-Channels:', error);
+        return null;
+      }
+    };
+    
+    const channel = setupRealtimeChannel();
     
     return () => {
       // Aufräumen
       clearTimeout(debounceTimer);
-      supabase.removeChannel(channel);
+      if (channel) {
+        console.log('Räume Realtime-Verbindung auf');
+        supabase.removeChannel(channel);
+      }
     };
   }, [searchQuery, supabase, clientLoading, isFiltered]);
 
