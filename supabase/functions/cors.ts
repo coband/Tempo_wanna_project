@@ -15,8 +15,7 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:3000",
   
   // Produktionsdomains
-  // Füge deine Vercel-Domain hier hinzu, sobald bereitgestellt:
-  // "https://deine-app.vercel.app"
+  "https://tempo-wanna-project-6xlvwe4km-cobands-projects.vercel.app"
 ];
 
 // Hilfsfunktion zur Überprüfung, ob ein Origin erlaubt ist
@@ -25,7 +24,12 @@ const isAllowedOrigin = (origin: string | null): boolean => {
   if (!origin) return false;
   
   // Prüfe, ob der Origin in der erlaubten Liste ist
-  return ALLOWED_ORIGINS.includes(origin);
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  
+  // Erlaube alle Vercel-Subdomains (für Entwicklung/Preview)
+  if (origin.endsWith('.vercel.app')) return true;
+  
+  return false;
 };
 
 // Dynamischer CORS-Header-Generator
