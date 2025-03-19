@@ -9,20 +9,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 // Erstelle einen anonymen Client für nicht-authentifizierte Anfragen
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  },
-  auth: {
-    persistSession: false
-  }
-});
-
-// Debug-Logging für WebSocket-Verbindung
-console.log('Supabase URL:', supabaseUrl);
-console.log('Supabase Anon Key verfügbar:', !!supabaseAnonKey);
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 /**
  * Custom Hook für authentifizierten Supabase-Client basierend auf Clerk-Token
