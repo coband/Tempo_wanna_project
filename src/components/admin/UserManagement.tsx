@@ -67,13 +67,13 @@ export function UserManagement() {
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
 
-  // Clerk Secret Key prüfen
-  useEffect(() => {
-    if (!import.meta.env.VITE_CLERK_SECRET_KEY) {
-      setError("Clerk Secret Key fehlt. Bitte in den Umgebungsvariablen konfigurieren.");
-      setLoading(false);
-    }
-  }, []);
+  // Clerk Secret Key Prüfung entfernen - dieser sollte nur serverseitig geprüft werden
+  // useEffect(() => {
+  //   if (!import.meta.env.VITE_CLERK_SECRET_KEY) {
+  //     setError("Clerk Secret Key fehlt. Bitte in den Umgebungsvariablen konfigurieren.");
+  //     setLoading(false);
+  //   }
+  // }, []);
 
   // Benutzer von Clerk abrufen
   const fetchUsers = async () => {
@@ -173,6 +173,7 @@ export function UserManagement() {
 
     const fetchData = async () => {
       setLoading(true);
+      setError(null); // Zurücksetzen von Fehlern beim erneuten Laden
       try {
         const users = await fetchUsers();
         setUsers(users);
