@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 serve(async (req) => {
-  // CORS-Präflug-Anfrage mit der gemeinsamen Funktion behandeln
+  // CORS-Präflight-Anfrage
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
@@ -17,7 +17,6 @@ serve(async (req) => {
   console.log("Anfrage-Origin:", origin);
   
   try {
-    // Jetzt implementieren wir eine ordnungsgemäße JWT-Validierung
     let userId = null;
     let isAuthenticated = false;
     
@@ -26,7 +25,6 @@ serve(async (req) => {
     
     if (authHeader) {
       try {
-        // Token validieren
         const token = authHeader.replace("Bearer ", "");
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
@@ -37,14 +35,11 @@ serve(async (req) => {
           console.log("Benutzer erfolgreich authentifiziert:", userId);
         } else {
           console.log("Token-Validierung fehlgeschlagen:", userError);
-          
-          // Versuche zu erkennen, ob es ein Clerk-Token ist
           try {
-            // Einfache Struktur-Prüfung für JWT
-            const tokenParts = token.split('.');
+            // Evtl. Clerk-Token prüfen
+            const tokenParts = token.split(".");
             if (tokenParts.length === 3) {
-              console.log("Das Token hat eine gültige JWT-Struktur. Es könnte ein Clerk-Token sein.");
-              // In einer Produktionsumgebung könnten wir hier Clerk-Token validieren
+              console.log("Token hat eine gültige JWT-Struktur (möglicherweise Clerk-Token).");
             }
           } catch (jwtError) {
             console.error("Fehler bei der JWT-Analyse:", jwtError);
@@ -59,14 +54,10 @@ serve(async (req) => {
     
     const requestBody = await req.json();
     const { isbn, preview } = requestBody;
-    
-    // Überprüfen, ob der Preview-Modus aktiv ist - strikter Vergleich mit true
     const isPreviewMode = preview === true;
     
     console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
     
-    // Für bestimmte Operationen könnten wir Authentifizierung erzwingen
-    // z.B. bei Import-Operationen
     if (!isPreviewMode && !isAuthenticated) {
       return new Response(
         JSON.stringify({ 
@@ -92,7 +83,7 @@ serve(async (req) => {
       );
     }
 
-    // Überprüfen, ob das Buch bereits in der Datenbank existiert
+    // Prüfen, ob das Buch bereits existiert
     const { data: existingBook } = await createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       .from("books")
       .select("*")
@@ -100,12 +91,13 @@ serve(async (req) => {
       .maybeSingle();
 
     if (existingBook) {
-      console.log(`Buch mit ISBN ${isbn} existiert bereits in der Datenbank:`, existingBook);
+      console.log(`Buch mit ISBN ${isbn} existiert bereits:`, existingBook);
       return new Response(JSON.stringify(existingBook), {
         headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     }
 
+    // === Neuer Teil: Perplexity-API-Aufruf mit sonar-pro, web_search_options etc. ===
     const response = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
       headers: {
@@ -113,7 +105,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "sonar",
+        model: "sonar-pro",               // <-- Wichtig: Neuer Modelltyp
         messages: [
           {
             role: "system",
@@ -127,7 +119,14 @@ serve(async (req) => {
         ],
         max_tokens: 1000,
         temperature: 0.1,
-        top_p: 0.95,
+        top_p: 0.9,
+        return_images: false,
+        return_related_questions: false,
+        top_k: 0,
+        stream: false,
+        presence_penalty: 0,
+        frequency_penalty: 1,
+        web_search_options: { search_context_size: "high" }, // <-- Wichtig: search_context_size
       }),
     });
 
@@ -136,7 +135,7 @@ serve(async (req) => {
     }
 
     const result = await response.json();
-    console.log("Raw API response:", result);
+    console.log("Rohdaten API-Antwort:", result);
 
     if (!result.choices?.[0]?.message?.content) {
       console.error("Invalid API response structure:", result);
@@ -146,15 +145,15 @@ serve(async (req) => {
     const content = result.choices[0].message.content;
     console.log("Content from API:", content);
 
-    // Nach dem Abrufen der Buchdaten vom API
+    // JSON aus dem AI-Content extrahieren
     let bookData;
     try {
-      // Remove any potential markdown formatting
+      // Markdown-Block entfernen, falls vorhanden
       const cleanContent = content.replace(/```json\n?|```/g, "").trim();
-      console.log("Cleaned content:", cleanContent);
+      console.log("Bereinigter JSON-Content:", cleanContent);
       bookData = JSON.parse(cleanContent);
     } catch (e) {
-      console.error("Failed to parse JSON:", content);
+      console.error("Fehler beim JSON-Parsen der AI-Antwort:", content);
       return new Response(
         JSON.stringify({
           error: "Invalid JSON response from AI",
@@ -167,12 +166,12 @@ serve(async (req) => {
       );
     }
 
-    // Spezieller Fix für das Level-Feld, wenn es als Array übergeben wird
+    // Falls "Stufe" als Array zurückkommt, in String umwandeln
     if (bookData?.Stufe && Array.isArray(bookData.Stufe)) {
-      bookData.Stufe = bookData.Stufe.join(', ');
+      bookData.Stufe = bookData.Stufe.join(", ");
     }
 
-    // Set default values for missing fields
+    // Standardwerte für fehlende Felder
     const defaultValues = {
       Titel: null,
       Autor: null,
@@ -184,16 +183,17 @@ serve(async (req) => {
       Typ: null,
       Verlag: null,
     };
-
     bookData = { ...defaultValues, ...bookData };
 
-    // Überprüfen und Korrektur der ISBN
+    // ISBN prüfen
     if (bookData.ISBN !== isbn) {
-      console.warn(`API hat eine andere ISBN zurückgegeben als angefragt. Verwende die ursprüngliche ISBN. Angefragt: ${isbn}, Zurückgegeben: ${bookData.ISBN}`);
-      bookData.ISBN = isbn; // Verwende immer die ursprüngliche ISBN
+      console.warn(
+        `API hat eine andere ISBN zurückgegeben als angefragt. Erwartet: ${isbn}, erhalten: ${bookData.ISBN}`
+      );
+      bookData.ISBN = isbn; // Wir erzwingen die ursprüngliche ISBN
     }
 
-    // Prüfe, ob wesentliche Informationen fehlen
+    // Prüfe, ob genug Buch-Infos vorliegen
     if (!bookData.Titel) {
       console.error("Keine ausreichenden Buchinformationen gefunden für ISBN:", isbn);
       return new Response(
@@ -204,53 +204,50 @@ serve(async (req) => {
         }),
         {
           headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
-          status: 404, // Verwende 404 für "nicht gefunden" statt 500 für Serverfehler
+          status: 404,
         }
       );
     }
 
-    // Formatiere die Buchdaten für die Rückgabe
+    // Buchdaten für Antwort/DB formatieren
     const formattedBookData = {
       title: bookData.Titel || "Unbekannter Titel",
       author: bookData.Autor || "Unbekannt",
-      isbn: isbn, // Verwende immer die ursprüngliche ISBN
-      // Sicherstellen, dass level immer als Text gespeichert wird
-      level: typeof bookData.Stufe === 'string' 
-        ? bookData.Stufe 
-        : Array.isArray(bookData.Stufe) 
-          ? bookData.Stufe.join(', ') 
+      isbn: isbn, // erzwungene ursprüngliche ISBN
+      level: typeof bookData.Stufe === "string"
+        ? bookData.Stufe
+        : Array.isArray(bookData.Stufe)
+          ? bookData.Stufe.join(", ")
           : bookData.Stufe?.toString() || "Unbekannt",
       subject: bookData.Fach || "Unbekannt",
       year: bookData.Erscheinungsjahr ? parseInt(bookData.Erscheinungsjahr, 10) : new Date().getFullYear(),
       description: bookData.Beschreibung || "Keine Beschreibung verfügbar",
       type: bookData.Typ || "Lehrmittel",
-      publisher: bookData.Verlag || "Unbekannt"
+      publisher: bookData.Verlag || "Unbekannt",
     };
-    
-    // Im Vorschaumodus geben wir nur die Buchdaten zurück, ohne in die Datenbank zu schreiben
+
+    // Im Vorschaumodus nur Daten zurückgeben, nicht in DB speichern
     if (isPreviewMode) {
-      console.log("Vorschaumodus aktiviert - Kein Datenbankeintrag wird erstellt");
+      console.log("Vorschaumodus aktiv – kein DB-Eintrag");
       return new Response(JSON.stringify(formattedBookData), {
         headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     } else {
-      console.log("Import-Modus aktiviert - Datenbankeintrag wird erstellt");
+      console.log("Import-Modus aktiv – Eintrag in Datenbank wird erstellt");
     }
 
-    // Erstelle einen Service-Role-Client für Datenbankoperationen
+    // Service-Role-Client für DB-Zugriff
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Das Buch in die Datenbank einfügen
     const bookEntry = {
       ...formattedBookData,
       user_id: userId,
       created_at: new Date().toISOString(),
-      available: true, // Standard: verfügbar
-      location: 'Schule', // Standardstandort
-      // vector_source wird automatisch durch die generierte Spalte in der Datenbank erzeugt
+      available: true,
+      location: "Schule",
     };
 
-    console.log("Füge Buch in die Datenbank ein:", bookEntry);
+    console.log("Füge Buch in Datenbank ein:", bookEntry);
 
     const { data: insertedBook, error: insertError } = await adminClient
       .from("books")
@@ -273,21 +270,18 @@ serve(async (req) => {
       );
     }
 
-    console.log("Buch erfolgreich in die Datenbank eingefügt:", insertedBook);
+    console.log("Buch erfolgreich eingefügt:", insertedBook);
 
-    // Nach dem Einfügen nur noch die Embedding-Generierung anstoßen
-    // Der vector_source wird automatisch durch die generierte Spalte in der Datenbank erstellt
+    // Optional: Embeddings generieren
     try {
       if (insertedBook && insertedBook.id) {
-        // Optional: Embedding-Generierung für dieses Buch anstoßen
         console.log(`Starte Embedding-Generierung für Buch ${insertedBook.id}`);
         
-        // Asynchron die createEmbeddings-Funktion aufrufen
         fetch(`${SUPABASE_URL}/functions/v1/createEmbeddings`, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
           },
           body: JSON.stringify({
             bookIds: [insertedBook.id]
@@ -297,16 +291,15 @@ serve(async (req) => {
         });
       }
     } catch (error) {
-      // Fehler beim Starten der Embedding-Generierung behandeln
       console.error("Fehler nach dem Einfügen des Buchs:", error);
     }
 
     return new Response(JSON.stringify(insertedBook || bookData), {
       headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
     });
+
   } catch (error) {
     console.error("Fehler beim Abrufen der Buchinformationen:", error);
-    
     return new Response(
       JSON.stringify({
         error: "Fehler beim Abrufen der Buchinformationen",
