@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 import { getCorsHeaders, handleCorsPreflightRequest } from "../cors.ts";
+import { GoogleGenAI } from "https://esm.sh/@google/genai";
 
-const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL") || "";
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -97,53 +98,49 @@ serve(async (req) => {
       });
     }
 
-    // === Neuer Teil: Perplexity-API-Aufruf mit sonar-pro, web_search_options etc. ===
-    const response = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PERPLEXITY_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "sonar-pro",               // <-- Wichtig: Neuer Modelltyp
-        messages: [
-          {
-            role: "system",
-            content:
-              "Du bist ein präziser Buchinformations-Assistent. Deine Aufgabe ist es, genaue Daten zu Büchern basierend auf ihrer ISBN zu liefern. Antworte ausschließlich mit einem validen JSON-Objekt.",
-          },
-          {
-            role: "user",
-            content: `Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`,
-          },
-        ],
-        max_tokens: 1000,
-        temperature: 0.1,
-        top_p: 0.9,
-        return_images: false,
-        return_related_questions: false,
-        top_k: 0,
-        stream: false,
-        presence_penalty: 0,
-        frequency_penalty: 1,
-        web_search_options: { search_context_size: "high" }, // <-- Wichtig: search_context_size
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Perplexity API error: ${response.statusText}`);
+    // === Neuer Teil: Gemini API-Aufruf ===
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY ist nicht konfiguriert");
     }
 
-    const result = await response.json();
-    console.log("Rohdaten API-Antwort:", result);
+    // API initialisieren genau wie im Beispiel
+    const ai = new GoogleGenAI({vertexai: false, apiKey: GEMINI_API_KEY});
+    
+    console.log("GEMINI_API_KEY vorhanden:", !!GEMINI_API_KEY);
+    console.log("API-Objekt erstellt");
+    
+    // Prompt für die Buchinformationen
+    const prompt = `Bitte verwende unbedingt die Google-Suche, um genaue Informationen zu diesem Buch zu finden: Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial(Spiele, Karten etc.)), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`;
 
-    if (!result.choices?.[0]?.message?.content) {
-      console.error("Invalid API response structure:", result);
-      throw new Error("Invalid API response structure");
+    console.log("Sende Anfrage an Gemini API...");
+    
+    let content;
+    try {
+      // Exakt den gleichen Anfragestruktur wie im Beispiel verwenden
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: prompt,
+        config: {
+          temperature: 0.1,
+          tools: [{googleSearch: {}}],
+        },
+      });
+      
+      console.log("Antwort von Gemini API erhalten");
+      
+      // Logging der Grounding-Metadaten für Debugging
+      if (response?.candidates?.[0]?.groundingMetadata) {
+        console.log("Grounding-Metadaten:", JSON.stringify(response.candidates[0].groundingMetadata));
+      }
+      
+      // Text aus der Antwort extrahieren
+      content = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      
+      console.log("Content from API:", content);
+    } catch (error) {
+      console.error("Fehler beim Aufruf der Gemini API:", error);
+      throw error;
     }
-
-    const content = result.choices[0].message.content;
-    console.log("Content from API:", content);
 
     // JSON aus dem AI-Content extrahieren
     let bookData;
@@ -162,7 +159,7 @@ serve(async (req) => {
         {
           headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
           status: 500,
-        },
+        }
       );
     }
 
