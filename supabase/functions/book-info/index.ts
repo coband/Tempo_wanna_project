@@ -110,7 +110,7 @@ serve(async (req) => {
     console.log("API-Objekt erstellt");
     
     // Prompt für die Buchinformationen
-    const prompt = `Bitte verwende unbedingt die Google-Suche, um genaue Informationen zu diesem Buch zu finden: Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören unterstufe, 4., 5., 6. Klasse gehören mittelstufe und 7., 8., 9. Klasse gehören oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial(Spiele, Karten etc.)), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`;
+    const prompt = `Bitte verwende unbedingt die Google-Suche, um genaue Informationen zu diesem Buch zu finden: Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören zur Unterstufe, 4., 5., 6. Klasse gehören Mittelstufe und 7., 8., 9. Klasse gehören zur Oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial(Spiele, Karten etc.)), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`;
 
     console.log("Sende Anfrage an Gemini API...");
     
@@ -123,6 +123,11 @@ serve(async (req) => {
         config: {
           temperature: 0.1,
           tools: [{googleSearch: {}}],
+          systemInstruction: [
+            {
+              text: 'Du bist ein präziser Buchinformations-Assistent. Deine Aufgabe ist es, genaue Daten zu Büchern oder Lernmaterialien basierend auf ihrer ISBN zu liefern. Antworte ausschließlich mit einem validen JSON-Objekt. Verwende immer die Google-Suche, um die Informationen zu finden. Wenn ich dir eine Auswahl von Antworten in einer Klammer gebe, dann verwende ausschliesslich diese für das JSON-Objekt.',
+            }
+        ],
         },
       });
       
