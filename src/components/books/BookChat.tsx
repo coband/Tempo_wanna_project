@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Skeleton } from '../ui/skeleton';
-import { Send, Book as BookIcon, User, X, Eye, Clock, ChevronDown } from 'lucide-react';
+import { Send, Book as BookIcon, User, X, Eye, Clock, ChevronDown, ChevronLeft } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { ScrollArea } from "../ui/scroll-area";
 import BookDetails from "./BookDetails";
@@ -121,10 +121,56 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
   const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [allMessages, setAllMessages] = useState<Message[]>([]);
+  const [isMobile, setIsMobile] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [booksCollapsed, setBooksCollapsed] = useState(false);
   const { toast } = useToast();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Überprüfen, ob Mobilgerät
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIfMobile();
+    window.addEventListener('resize', checkIfMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkIfMobile);
+    };
+  }, []);
+
+  // Keyboard-Erkennung (vereinfacht)
+  useEffect(() => {
+    const handleResize = () => {
+      // Einfache Heuristik: wenn die Bildschirmhöhe deutlich kleiner wird, 
+      // ist das Keyboard wahrscheinlich geöffnet
+      const windowHeight = window.innerHeight;
+      const visibleHeight = window.visualViewport?.height || windowHeight;
+      
+      // Wenn mehr als 25% des Bildschirms versteckt sind, nehmen wir an, dass das Keyboard offen ist
+      setKeyboardOpen(visibleHeight < windowHeight * 0.75);
+    };
+
+    // Initial und bei Resize prüfen
+    handleResize();
+    
+    window.addEventListener('resize', handleResize);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleResize);
+    }
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleResize);
+      }
+    };
+  }, []);
 
   // Chat-Historie beim Komponenten-Laden abrufen
   useEffect(() => {
@@ -134,42 +180,49 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
 
   // Alle Nachrichten aus dem Verlauf zusammenführen
   useEffect(() => {
-    // Erstelle ein kombiniertes Array mit allen Nachrichten aus der Historie und aktuellen Nachrichten
-    let combinedMessages: Message[] = [...messages];
+    // Erstelle ein kombiniertes Array mit allen Nachrichten in chronologischer Reihenfolge (älteste zuerst)
+    let combinedMessages: Message[] = [];
     
-    // Füge Nachrichten aus früheren Sitzungen hinzu
+    // Füge historische Sitzungen hinzu (älteste zuerst)
     if (chatHistory.length > 0) {
-      // Sortiere die Sitzungen nach Datum (neueste zuerst)
+      // Sortiere die Sitzungen nach Datum (älteste zuerst)
       const sortedHistory = [...chatHistory].sort((a, b) => 
-        b.timestamp.getTime() - a.timestamp.getTime()
+        a.timestamp.getTime() - b.timestamp.getTime()
       );
       
-      // Füge eine Trennnachricht zwischen den Sitzungen ein, wenn aktuelle Sitzung Nachrichten hat
-      if (messages.length > 1) {
-        combinedMessages.push({
-          type: 'assistant',
-          content: '------- Frühere Gespräche -------',
-          timestamp: new Date(),
-        });
-      }
-      
-      // Füge alle Nachrichten der Sitzungen hinzu
+      // Füge alle Nachrichten der älteren Sitzungen hinzu (älteste zuerst)
       sortedHistory.forEach((session, sessionIndex) => {
-        // Trennlinie zwischen den Sessions
-        if (sessionIndex > 0) {
+        // Sitzungsnachrichten hinzufügen
+        combinedMessages = [
+          ...combinedMessages,
+          ...session.messages
+        ];
+        
+        // Trennlinie nach jeder Sitzung hinzufügen (außer nach der letzten)
+        if (sessionIndex < sortedHistory.length - 1) {
           combinedMessages.push({
             type: 'assistant',
             content: '------- Früheres Gespräch -------',
             timestamp: new Date(),
           });
         }
-        
-        combinedMessages = [
-          ...combinedMessages,
-          ...session.messages
-        ];
       });
+      
+      // Füge eine Trennnachricht zwischen den früheren und der aktuellen Sitzung ein
+      if (messages.length > 1) {
+        combinedMessages.push({
+          type: 'assistant',
+          content: '------- Aktuelles Gespräch -------',
+          timestamp: new Date(),
+        });
+      }
     }
+    
+    // Füge die aktuellen Nachrichten hinzu (als letztes/unten)
+    combinedMessages = [
+      ...combinedMessages,
+      ...messages
+    ];
     
     setAllMessages(combinedMessages);
   }, [messages, chatHistory]);
@@ -249,141 +302,157 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
     }
   };
 
+  // Hilfsfunktion, um Trennlinien zu identifizieren
+  const isSeparatorMessage = (message: Message) => {
+    return message.type === 'assistant' && 
+           (message.content.includes('-------') || 
+            message.content.includes('Frühere') ||
+            message.content.includes('Aktuelles'));
+  };
+
+  // Rendern der Chatnachrichten
+  const renderMessages = () => {
+    // Alle verarbeiteten Nachrichten als React-JSX-Elemente
+    const renderedMessages: React.ReactNode[] = [];
+    
+    // Verarbeite alle Nachrichten (bereits in chronologischer Reihenfolge)
+    allMessages.forEach((message, index) => {
+      renderedMessages.push(
+        <div
+          key={`message-${index}`}
+          className={`flex ${
+            message.type === 'user' ? 'justify-end' : 'justify-start'
+          } ${isSeparatorMessage(message) ? 'justify-center text-gray-500 text-sm my-3' : ''}`}
+        >
+          {!isSeparatorMessage(message) && (
+            <div
+              className={`max-w-[80%] rounded-lg p-3 ${
+                message.type === 'user' 
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-900'
+              }`}
+            >
+              {message.content}
+            </div>
+          )}
+          
+          {isSeparatorMessage(message) && (
+            <div className="w-full text-center">
+              <div className="inline-block px-2">{message.content}</div>
+            </div>
+          )}
+        </div>
+      );
+    });
+    
+    return renderedMessages;
+  };
+
   const handleSearch = async () => {
     if (!inputValue.trim()) return;
-
-    // Temporäres Input speichern und sofort zurücksetzen
-    const currentInput = inputValue.trim();
-    setInputValue('');
-
-    // Benutzer-Nachricht hinzufügen
+    
+    // Benutzeranfrage zur Nachrichtenliste hinzufügen
     const userMessage: Message = {
       type: 'user',
-      content: currentInput,
+      content: inputValue,
       timestamp: new Date(),
     };
     
-    // Sofort die Benutzernachricht anzeigen
     setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
     setIsLoading(true);
-    setShowResults(false);
-
+    
     try {
-      // Rate Limiting: Prüfen, ob der Benutzer zu viele Anfragen sendet
-      const lastRequestTime = localStorage.getItem('lastSearchRequestTime');
-      const now = Date.now();
-      const timeThreshold = 2000; // 2 Sekunden zwischen Anfragen
-      
-      if (lastRequestTime && now - parseInt(lastRequestTime) < timeThreshold) {
-        throw new Error('Bitte warte einen Moment zwischen den Suchanfragen.');
-      }
-      
-      // Aktuelle Zeit für Rate Limiting speichern
-      localStorage.setItem('lastSearchRequestTime', now.toString());
-      
-      console.log('Rufe Edge-Funktion search-books auf...');
-      
       // Hole Clerk-Token für Supabase
       let authToken = null;
       try {
         authToken = await clerkAuth.getToken({ template: 'supabase' });
-        console.log('Auth-Token erhalten:', !!authToken);
       } catch (tokenError) {
-        console.warn('Fehler beim Abrufen des Auth-Tokens:', tokenError);
+        console.warn("Fehler beim Abrufen des Auth-Tokens:", tokenError);
+        // Wir fahren trotzdem fort, supabase wird dann den anon key verwenden
       }
       
-      // Manuell die Edge-Funktion aufrufen mit dem Token
-      const functionsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search-books`;
-      
-      let data: any;
-      
+      // Verwende Edge Function statt RPC
+      let data;
       if (authToken) {
-        // Direkter Aufruf mit fetch
-        try {
-          const fetchResponse = await fetch(functionsUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({ query: userMessage.content }),
-          });
-          
-          if (!fetchResponse.ok) {
-            console.error('Function error:', fetchResponse.status, fetchResponse.statusText);
-            throw new Error(`Edge-Funktion Fehler: ${fetchResponse.status} ${fetchResponse.statusText}`);
-          }
-          
-          data = await fetchResponse.json();
-          console.log('Edge-Funktion Antwort:', data);
-        } catch (fetchError) {
-          console.error('Fetch error:', fetchError);
-          throw fetchError;
-        }
-      } else {
-        // Wenn wir keinen Token haben, nutzen wir die Supabase invoke-Methode
-        const supabaseResponse = await publicClient.functions.invoke('search-books', {
-          body: { query: userMessage.content },
+        // Direkter Aufruf der Edge-Funktion mit fetch und Auth-Token
+        const functionsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/search-books`;
+        const response = await fetch(functionsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify({ query: userMessage.content })
         });
         
-        console.log('Edge-Funktion Antwort:', supabaseResponse);
-        
-        if (supabaseResponse.error) {
-          console.error('Function error:', supabaseResponse.error);
-          throw new Error(`Edge-Funktion Fehler: ${JSON.stringify(supabaseResponse.error)}`);
+        if (!response.ok) {
+          throw new Error(`Fehler beim Aufruf der Suchfunktion: ${response.status} ${response.statusText}`);
         }
         
-        data = supabaseResponse.data;
+        const result = await response.json();
+        data = result.books || [];
+      } else {
+        // Alternativ: Supabase Functions API nutzen
+        const { data: result, error } = await publicClient.functions.invoke('search-books', {
+          body: { query: userMessage.content }
+        });
+        
+        if (error) {
+          throw new Error(`Fehler bei der Suche: ${error.message}`);
+        }
+        
+        data = result.books || [];
       }
       
-      // Verarbeite Daten, unabhängig von der Quelle
-      setBooks(data.books || []);
-
-      // Antwort des Assistenten hinzufügen
+      // Antwort des Assistenten erstellen
+      let responseContent = '';
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        // Wenn Bücher gefunden wurden
+        responseContent = `Ich habe ${data.length} Bücher gefunden, die zu deiner Anfrage passen:`;
+        setBooks(data);
+        setShowResults(true);
+      } else {
+        // Wenn keine Bücher gefunden wurden
+        responseContent = "Leider konnte ich keine passenden Bücher finden. Bitte versuche es mit anderen Suchbegriffen oder beschreibe dein gesuchtes Thema genauer.";
+        setBooks([]);
+        setShowResults(false);
+      }
+      
+      // Assistentenantwort hinzufügen
       const assistantMessage: Message = {
         type: 'assistant',
-        content: `Ich habe ${data.books.length} Bücher gefunden, die deiner Anfrage entsprechen. Hier sind die Ergebnisse:`,
+        content: responseContent,
         timestamp: new Date(),
       };
       
-      setMessages((prev) => [...prev, assistantMessage]);
-      setShowResults(true);
+      setMessages(prev => [...prev, assistantMessage]);
+      
     } catch (error) {
-      console.error('Error searching books:', error);
+      console.error("Fehler bei der Buchsuche:", error);
       
-      // Detailliertere Fehlermeldung für den Benutzer
-      let errorMessage: Message;
+      // Fehlermeldung als Assistentenantwort
+      const errorMessage: Message = {
+        type: 'assistant',
+        content: "Entschuldigung, bei der Suche ist ein Fehler aufgetreten. Bitte versuche es später noch einmal.",
+        timestamp: new Date(),
+      };
       
-      if (error instanceof Error) {
-        errorMessage = {
-          type: 'assistant',
-          content: `Es tut mir leid, aber bei der Suche ist ein Fehler aufgetreten: ${error.message}. Bitte versuche es später noch einmal oder kontaktiere den Support, wenn das Problem weiterhin besteht.`,
-          timestamp: new Date(),
-        };
-        
-        // Detaillierte Fehlerinformationen in die Konsole schreiben
-        console.error('Vollständiger Fehler:', {
-          message: error.message,
-          stack: error.stack
-        });
-        
-        // Toast mit Fehlerdetails anzeigen
-        toast({
-          title: "Fehler bei der Buchsuche",
-          description: `${error.message}`,
-          variant: "destructive"
-        });
-      } else {
-        errorMessage = {
-          type: 'assistant',
-          content: 'Es tut mir leid, aber bei der Suche ist ein unbekannter Fehler aufgetreten. Bitte versuche es später noch einmal.',
-          timestamp: new Date(),
-        };
-      }
+      setMessages(prev => [...prev, errorMessage]);
       
-      setMessages((prev) => [...prev, errorMessage]);
+      toast({
+        variant: "destructive",
+        title: "Fehler bei der Suche",
+        description: "Es ist ein Problem aufgetreten. Bitte versuche es später erneut."
+      });
+      
     } finally {
       setIsLoading(false);
+      // Fokus wieder auf das Eingabefeld setzen
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
     }
   };
 
@@ -392,249 +461,259 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+      e.preventDefault();
       handleSearch();
     }
   };
 
   const openBookDetails = async (searchBook: SearchBook) => {
     setIsLoadingBookDetails(true);
+    
     try {
-      // Vollständige Buchdaten aus der Datenbank abrufen
-      const { data, error } = await supabase
+      // Hole Clerk-Token für Supabase
+      let authToken = null;
+      try {
+        authToken = await clerkAuth.getToken({ template: 'supabase' });
+      } catch (tokenError) {
+        console.warn("Fehler beim Abrufen des Auth-Tokens:", tokenError);
+      }
+      
+      // Bestimme, welchen Client wir verwenden
+      const client = authToken ? supabase : publicClient;
+      
+      // Lade vollständige Buchinformationen
+      const { data: bookData, error } = await client
         .from('books')
         .select('*')
         .eq('id', searchBook.id)
         .single();
       
-      if (error) throw error;
-      
-      if (data) {
-        setSelectedBook(data);
-        setShowDetailsDialog(true);
-      } else {
-        toast({
-          title: "Fehler",
-          description: "Das ausgewählte Buch konnte nicht gefunden werden.",
-          variant: "destructive"
-        });
+      if (error) {
+        throw error;
       }
+      
+      // Type Assertion hinzufügen, um Typfehler zu vermeiden
+      setSelectedBook(bookData as unknown as Book);
+      setShowDetailsDialog(true);
+      
     } catch (error) {
-      console.error('Error fetching book details:', error);
+      console.error("Fehler beim Laden der Buchdetails:", error);
       toast({
+        variant: "destructive",
         title: "Fehler",
-        description: "Beim Laden der Buchdetails ist ein Fehler aufgetreten.",
-        variant: "destructive"
+        description: "Die Buchdetails konnten nicht geladen werden."
       });
     } finally {
       setIsLoadingBookDetails(false);
     }
   };
 
-  // Prüft, ob ein nachricht eine Separatorlinie ist
-  const isSeparatorMessage = (message: Message) => {
-    return message.type === 'assistant' && (
-      message.content === '------- Frühere Gespräche -------' ||
-      message.content === '------- Früheres Gespräch -------'
-    );
-  };
-
-  const renderMessages = () => {
-    // Kombinierte Nachrichten: frühere Sitzungen + aktuelle Sitzung
-    let allMessages: React.ReactNode[] = [];
-    
-    // Frühere Nachrichten hinzufügen (älteste zuerst)
-    const historicalMessages = chatHistory
-      .filter(session => session.id !== currentSessionId) // Aktuelle Sitzung ausschließen
-      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()) // Älteste zuerst
-      .flatMap((session, sessionIndex, array) => {
-        const sessionMessages = session.messages.map((message, msgIndex) => (
-          <div key={`history-${session.id}-${msgIndex}`}
-            className={`flex ${
-              message.type === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            <div
-              className={`flex max-w-[80%] ${
-                message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
-              }`}
-            >
-              <div className={`flex-shrink-0 ${message.type === 'user' ? 'ml-3' : 'mr-3'}`}>
-                <Avatar>
-                  <AvatarFallback>
-                    {message.type === 'user' ? <User size={18} /> : <BookIcon size={18} />}
-                  </AvatarFallback>
-                </Avatar>
-              </div>
-              <div
-                className={`p-3 rounded-lg ${
-                  message.type === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                }`}
-              >
-                <p className="whitespace-normal break-words">{message.content}</p>
-                <p className="text-xs opacity-70 mt-1">
-                  {message.timestamp.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </p>
-              </div>
-            </div>
-          </div>
-        ));
-        
-        // Trennlinie nach jeder Sitzung hinzufügen (außer nach der letzten)
-        if (sessionIndex < array.length - 1) {
-          sessionMessages.push(
-            <div key={`separator-${session.id}`} className="flex justify-center my-6">
-              <div className="bg-muted px-3 py-1 rounded-md text-xs text-muted-foreground">
-                ------- Früheres Gespräch -------
-              </div>
-            </div>
-          );
-        }
-        
-        return sessionMessages;
-      });
-    
-    allMessages = [...historicalMessages];
-    
-    // Trennlinie hinzufügen, wenn es frühere Chats gibt und die aktuelle Sitzung Nachrichten hat
-    if (chatHistory.filter(session => session.id !== currentSessionId).length > 0 && messages.length > 1) {
-      allMessages.push(
-        <div key="current-separator" className="flex justify-center my-6">
-          <div className="bg-muted px-3 py-1 rounded-md text-xs text-muted-foreground">
-            ------- Aktuelles Gespräch -------
-          </div>
-        </div>
-      );
-    }
-    
-    // Aktuelle Nachrichten hinzufügen (als letztes/unten)
-    const currentMessages = messages.map((message, index) => (
-      <div key={`current-${index}`}
-        className={`flex ${
-          message.type === 'user' ? 'justify-end' : 'justify-start'
-        }`}
+  // Mobile Header Komponente
+  const MobileHeader = () => (
+    <div className="flex items-center justify-between border-b p-3 bg-white sticky top-0 z-10">
+      <button 
+        onClick={() => onOpenChange(false)}
+        className="flex items-center text-gray-700"
       >
-        <div
-          className={`flex max-w-[80%] ${
-            message.type === 'user' ? 'flex-row-reverse' : 'flex-row'
-          }`}
-        >
-          <div className={`flex-shrink-0 ${message.type === 'user' ? 'ml-3' : 'mr-3'}`}>
-            <Avatar>
-              <AvatarFallback>
-                {message.type === 'user' ? <User size={18} /> : <BookIcon size={18} />}
-              </AvatarFallback>
-            </Avatar>
-          </div>
-          <div
-            className={`p-3 rounded-lg ${
-              message.type === 'user'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted'
-            }`}
-          >
-            <p className="whitespace-normal break-words">{message.content}</p>
-            <p className="text-xs opacity-70 mt-1">
-              {message.timestamp.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </p>
-          </div>
-        </div>
-      </div>
-    ));
-    
-    return [...allMessages, ...currentMessages];
-  };
+        <ChevronLeft className="h-5 w-5 mr-1" />
+        <span>Zurück</span>
+      </button>
+      <h2 className="text-lg font-semibold">Buch-Chatbot</h2>
+      <div className="w-8"></div> {/* Placeholder für Balance */}
+    </div>
+  );
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>Buch-Chatbot</DialogTitle>
-            <DialogDescription>
-              Stelle eine Frage, um passende Bücher zu finden
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="flex-1 overflow-hidden flex flex-col h-[60vh]">
-            <ScrollArea className="flex-1 pr-4 mb-4 max-h-full overflow-y-auto" ref={scrollAreaRef}>
-              <div className="space-y-4 pb-2">
-                {renderMessages()}
-                <div ref={messagesEndRef} className="h-1" />
-              </div>
-            </ScrollArea>
+        <DialogContent
+          className={`
+            ${isMobile 
+              ? 'w-full h-[100vh] max-h-[100vh] max-w-full p-0 m-0 rounded-none inset-0 translate-x-0 translate-y-0 top-0 left-0' 
+              : 'sm:max-w-[800px] max-h-[90vh]'
+            } overflow-hidden flex flex-col
+          `}
+          style={isMobile ? {
+            position: 'fixed',
+            transform: 'none'
+          } : {}}
+        >
+          {isMobile ? (
+            <>
+              <MobileHeader />
+              <div className={`flex-1 overflow-hidden flex flex-col ${keyboardOpen ? 'h-[30vh]' : 'h-[calc(100vh-56px)]'}`}>
+                <ScrollArea 
+                  className="flex-1 px-3 overflow-y-auto"
+                  ref={scrollAreaRef}
+                >
+                  <div className="space-y-4 py-3">
+                    {renderMessages()}
+                    <div ref={messagesEndRef} className="h-1" />
+                  </div>
+                </ScrollArea>
 
-            {showResults && (
-              <div className="mb-4 mt-2 border-t pt-4">
-                <h3 className="text-lg font-medium mb-3">Gefundene Bücher:</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[30vh] overflow-y-auto pr-2">
-                  {books.map((book) => (
-                    <Card key={book.id} className="overflow-hidden">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-semibold text-md">{book.title}</h4>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => openBookDetails(book)}
-                            disabled={isLoadingBookDetails}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                {showResults && (
+                  <div className="border-t pt-2 px-3 overflow-hidden">
+                    <Collapsible open={!booksCollapsed} onOpenChange={(open) => setBooksCollapsed(!open)}>
+                      <CollapsibleTrigger asChild>
+                        <div className="flex justify-between items-center mb-2 cursor-pointer">
+                          <h3 className="text-base font-medium">Gefundene Bücher</h3>
+                          <ChevronDown className={`h-4 w-4 transform transition-transform ${booksCollapsed ? '' : 'rotate-180'}`} />
                         </div>
-                        <p className="text-sm text-gray-600 mb-2">{book.author}</p>
-                        
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <Badge variant="outline">{book.subject}</Badge>
-                          <Badge variant="outline">{book.level}</Badge>
-                          <Badge 
-                            variant="secondary"
-                            className="ml-auto"
-                          >
-                            {(book.similarity * 100).toFixed()}% Ähnlichkeit
-                          </Badge>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent forceMount className={`${booksCollapsed ? 'hidden' : 'block'}`}>
+                        <div className="grid grid-cols-1 gap-3 max-h-[30vh] overflow-y-auto pb-3">
+                          {books.map((book) => (
+                            <Card key={book.id} className="overflow-hidden">
+                              <CardContent className="p-3">
+                                <div className="flex justify-between items-start mb-1">
+                                  <h4 className="font-semibold text-sm">{book.title}</h4>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => openBookDetails(book)}
+                                    disabled={isLoadingBookDetails}
+                                    className="h-6 w-6 p-0"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-gray-600 mb-1">{book.author}</p>
+                                
+                                <div className="flex items-center gap-1 mb-1 flex-wrap">
+                                  <Badge variant="outline" className="text-xs">{book.subject}</Badge>
+                                  <Badge variant="outline" className="text-xs">{book.level}</Badge>
+                                  <Badge 
+                                    variant="secondary"
+                                    className="ml-auto text-xs"
+                                  >
+                                    {(book.similarity * 100).toFixed()}% Ähnlichkeit
+                                  </Badge>
+                                </div>
+                                
+                                <p className="text-xs text-gray-700 line-clamp-2">{book.description}</p>
+                              </CardContent>
+                            </Card>
+                          ))}
                         </div>
-                        
-                        <p className="text-sm text-gray-700 line-clamp-2">{book.description}</p>
-                      </CardContent>
-                    </Card>
-                  ))}
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+                )}
+
+                {isLoading && (
+                  <div className="py-2 px-3">
+                    <Skeleton className="h-3 w-2/3 mb-2" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                )}
+              </div>
+
+              <div className={`border-t py-2 px-3 flex flex-shrink-0 ${keyboardOpen ? 'mb-0' : 'mb-3'}`}>
+                <div className="flex gap-2 w-full">
+                  <Input
+                    ref={inputRef}
+                    placeholder="Schreibe deine Frage hier..."
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyPress}
+                    disabled={isLoading}
+                    className="flex-1"
+                  />
+                  <Button 
+                    onClick={handleSearch} 
+                    disabled={isLoading || !inputValue.trim()}
+                    size="icon"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-            )}
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Buch-Chatbot</DialogTitle>
+                <DialogDescription>
+                  Stelle eine Frage, um passende Bücher zu finden
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="flex-1 overflow-hidden flex flex-col h-[60vh]">
+                <ScrollArea className="flex-1 pr-4 mb-4 max-h-full overflow-y-auto" ref={scrollAreaRef}>
+                  <div className="space-y-4 pb-2">
+                    {renderMessages()}
+                    <div ref={messagesEndRef} className="h-1" />
+                  </div>
+                </ScrollArea>
 
-            {isLoading && (
-              <div className="mb-4">
-                <Skeleton className="h-4 w-2/3 mb-2" />
-                <Skeleton className="h-4 w-1/2" />
+                {showResults && (
+                  <div className="mb-4 mt-2 border-t pt-4">
+                    <h3 className="text-lg font-medium mb-3">Gefundene Bücher:</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[30vh] overflow-y-auto pr-2">
+                      {books.map((book) => (
+                        <Card key={book.id} className="overflow-hidden">
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="font-semibold text-md">{book.title}</h4>
+                              <Button 
+                                variant="ghost" 
+                                size="icon"
+                                onClick={() => openBookDetails(book)}
+                                disabled={isLoadingBookDetails}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">{book.author}</p>
+                            
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <Badge variant="outline">{book.subject}</Badge>
+                              <Badge variant="outline">{book.level}</Badge>
+                              <Badge 
+                                variant="secondary"
+                                className="ml-auto"
+                              >
+                                {(book.similarity * 100).toFixed()}% Ähnlichkeit
+                              </Badge>
+                            </div>
+                            
+                            <p className="text-sm text-gray-700 line-clamp-2">{book.description}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isLoading && (
+                  <div className="mb-4">
+                    <Skeleton className="h-4 w-2/3 mb-2" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <DialogFooter className="flex-shrink-0 sm:justify-between border-t pt-4">
-            <div className="flex gap-2 w-full">
-              <Input
-                placeholder="Schreibe deine Frage hier..."
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyPress}
-                disabled={isLoading}
-                className="flex-1"
-              />
-              <Button onClick={handleSearch} disabled={isLoading || !inputValue.trim()}>
-                <Send className="h-4 w-4" />
-                <span className="sr-only">Senden</span>
-              </Button>
-            </div>
-          </DialogFooter>
+              <DialogFooter className="flex-shrink-0 sm:justify-between border-t pt-4">
+                <div className="flex gap-2 w-full">
+                  <Input
+                    ref={inputRef}
+                    placeholder="Schreibe deine Frage hier..."
+                    value={inputValue}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyPress}
+                    disabled={isLoading}
+                    className="flex-1"
+                  />
+                  <Button onClick={handleSearch} disabled={isLoading || !inputValue.trim()}>
+                    <Send className="h-4 w-4" />
+                    <span className="sr-only">Senden</span>
+                  </Button>
+                </div>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

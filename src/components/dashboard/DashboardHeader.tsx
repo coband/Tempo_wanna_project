@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, Users, BookOpen, Upload } from "lucide-react";
+import { LogOut, Users, BookOpen, Upload, Menu, X } from "lucide-react";
 import { UserButton } from "@clerk/clerk-react";
+import { useState } from "react";
 
 interface DashboardHeaderProps {
   className?: string;
@@ -11,10 +12,52 @@ interface DashboardHeaderProps {
 export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
   const { isAdmin, isSuperAdmin } = useAuth();
   const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => {
     return location.pathname === path ? 'bg-gray-100' : '';
   };
+
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const navLinks = (
+    <>
+      <Link
+        to="/dashboard"
+        className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/dashboard')}`}
+        onClick={() => setMobileMenuOpen(false)}
+      >
+        <BookOpen className="h-5 w-5 mr-2" />
+        <span>Bücher</span>
+      </Link>
+      
+      {/* Benutzerverwaltung nur für Superadmins */}
+      {isSuperAdmin && (
+        <Link
+          to="/admin/users"
+          className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/users')}`}
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <Users className="h-5 w-5 mr-2" />
+          <span>Benutzerverwaltung</span>
+        </Link>
+      )}
+      
+      {/* Massenimport für alle Admins (inklusive Superadmins) */}
+      {isAdmin && (
+        <Link
+          to="/admin/bulk-import"
+          className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/bulk-import')}`}
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <Upload className="h-5 w-5 mr-2" />
+          <span>Massenimport</span>
+        </Link>
+      )}
+    </>
+  );
 
   return (
     <header className={`border-b bg-white ${className}`}>
@@ -24,38 +67,19 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
             Wanna
           </h2>
           
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           <nav className="hidden md:flex space-x-2">
-            <Link
-              to="/dashboard"
-              className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/dashboard')}`}
-            >
-              <BookOpen className="h-5 w-5 mr-2" />
-              <span>Bücher</span>
-            </Link>
-            
-            {/* Benutzerverwaltung nur für Superadmins */}
-            {isSuperAdmin && (
-              <Link
-                to="/admin/users"
-                className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/users')}`}
-              >
-                <Users className="h-5 w-5 mr-2" />
-                <span>Benutzerverwaltung</span>
-              </Link>
-            )}
-            
-            {/* Massenimport für alle Admins (inklusive Superadmins) */}
-            {isAdmin && (
-              <Link
-                to="/admin/bulk-import"
-                className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/admin/bulk-import')}`}
-              >
-                <Upload className="h-5 w-5 mr-2" />
-                <span>Massenimport</span>
-              </Link>
-            )}
+            {navLinks}
           </nav>
+
+          {/* Mobile Menu Button */}
+          <button 
+            className="md:hidden flex items-center text-gray-700 ml-2" 
+            onClick={toggleMobileMenu}
+            aria-label="Toggle mobile menu"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -69,6 +93,15 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
           <UserButton afterSignOutUrl="/" />
         </div>
       </div>
+
+      {/* Mobile Navigation Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-gray-200">
+          <nav className="flex flex-col space-y-1 p-4 bg-white">
+            {navLinks}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
