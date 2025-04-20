@@ -93,6 +93,7 @@ export function BookFilter({
   // Filter zurücksetzen
   onClearFilters
 }: FilterProps) {
+  // Setze isFilterOpen initial auf false für konsistentes Verhalten
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -514,9 +515,11 @@ export function BookFilter({
               </Button>
             </CollapsibleTrigger>
           </div>
-          <CollapsibleContent>
-            <FilterContent />
-          </CollapsibleContent>
+          {isFilterOpen && (
+            <CollapsibleContent forceMount className={isFilterOpen ? "block" : "hidden"}>
+              <FilterContent />
+            </CollapsibleContent>
+          )}
         </Collapsible>
       ) : (
         <div className="mb-4">

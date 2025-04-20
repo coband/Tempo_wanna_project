@@ -348,7 +348,7 @@ export function BookForm({
         ref={dialogContentRef}
         className={`
           ${isMobile 
-            ? 'w-full h-[100vh] max-h-[100vh] max-w-full p-0 m-0 rounded-none inset-0 translate-x-0 translate-y-0 top-0 left-0' 
+            ? 'w-full h-screen max-h-screen max-w-full p-0 m-0 rounded-none inset-0 translate-x-0 translate-y-0 top-0 left-0' 
             : 'sm:max-w-[425px] h-[90vh]'
           } overflow-y-auto
         `}
@@ -360,7 +360,7 @@ export function BookForm({
         {isMobile ? (
           <>
             <MobileHeader />
-            <div className="pt-14 pb-6 px-4">
+            <div className="pt-14 pb-32 px-4"> {/* Erhöhtes padding-bottom für mehr Platz unten */}
               <DialogDescription className="text-gray-600 mt-2 mb-4">
                 {initialBook
                   ? "Bearbeiten Sie die Buchinformationen."
@@ -565,19 +565,20 @@ export function BookForm({
                   />
                 </div>
 
-                <div className="flex justify-center gap-4 mt-8 pb-8">
+                {/* Buttons am Ende des Formulars mit deutlich mehr Abstand nach oben und unten */}
+                <div className="flex justify-center gap-4 mt-16 mb-20">
                   <Button
                     type="button"
                     variant="outline"
                     onClick={handleCancel}
-                    className="flex-1"
+                    className="flex-1 h-14 text-base" /* Noch größerer Button auf Mobile */
                   >
                     Abbrechen
                   </Button>
                   <Button 
                     type="submit" 
                     disabled={isLoading}
-                    className="flex-1"
+                    className="flex-1 h-14 text-base" /* Noch größerer Button auf Mobile */
                   >
                     {isLoading && (
                       <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />

@@ -302,6 +302,15 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
     }
   };
 
+  // Einmal beim Öffnen des Chats zum Ende scrollen
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => {
+        scrollToBottom();
+      }, 300);
+    }
+  }, [open]);
+
   // Hilfsfunktion, um Trennlinien zu identifizieren
   const isSeparatorMessage = (message: Message) => {
     return message.type === 'assistant' && 
@@ -322,7 +331,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           key={`message-${index}`}
           className={`flex ${
             message.type === 'user' ? 'justify-end' : 'justify-start'
-          } ${isSeparatorMessage(message) ? 'justify-center text-gray-500 text-sm my-3' : ''}`}
+          } ${isSeparatorMessage(message) ? 'justify-center text-gray-500 text-sm my-3' : 'mb-4'}`}
         >
           {!isSeparatorMessage(message) && (
             <div
@@ -510,19 +519,32 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
   };
 
   // Mobile Header Komponente
-  const MobileHeader = () => (
-    <div className="flex items-center justify-between border-b p-3 bg-white sticky top-0 z-10">
-      <button 
-        onClick={() => onOpenChange(false)}
-        className="flex items-center text-gray-700"
-      >
-        <ChevronLeft className="h-5 w-5 mr-1" />
-        <span>Zurück</span>
-      </button>
-      <h2 className="text-lg font-semibold">Buch-Chatbot</h2>
-      <div className="w-8"></div> {/* Placeholder für Balance */}
-    </div>
-  );
+  const MobileHeader = () => {
+    // Letzte Benutzernachricht für Kontext finden
+    const lastUserMessage = allMessages.filter(m => m.type === 'user').pop();
+    const searchQuery = lastUserMessage ? lastUserMessage.content : '';
+    
+    return (
+      <div className="flex flex-col bg-white sticky top-0 z-10">
+        <div className="flex items-center justify-between p-3 border-b">
+          <button 
+            onClick={() => onOpenChange(false)}
+            className="flex items-center text-gray-700"
+          >
+            <ChevronLeft className="h-5 w-5 mr-1" />
+            <span>Zurück</span>
+          </button>
+          <h2 className="text-lg font-semibold">Buch-Chatbot</h2>
+          <div className="w-8"></div> {/* Placeholder für Balance */}
+        </div>
+        {searchQuery && (
+          <div className="px-4 py-3 bg-gray-50 text-gray-800 font-medium">
+            Suche: <span className="text-blue-600">"{searchQuery}"</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -542,63 +564,75 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           {isMobile ? (
             <>
               <MobileHeader />
-              <div className={`flex-1 overflow-hidden flex flex-col ${keyboardOpen ? 'h-[30vh]' : 'h-[calc(100vh-56px)]'}`}>
+              <div className={`flex-1 overflow-hidden flex flex-col ${keyboardOpen ? 'h-[60vh]' : 'h-[calc(100vh-160px)]'}`}>
                 <ScrollArea 
                   className="flex-1 px-3 overflow-y-auto"
                   ref={scrollAreaRef}
                 >
-                  <div className="space-y-4 py-3">
-                    {renderMessages()}
-                    <div ref={messagesEndRef} className="h-1" />
+                  <div className="space-y-4 py-3 mb-24">
+                    {/* Nur die letzten zwei Nachrichten anzeigen: letzte Benutzereingabe und Antwort */}
+                    {allMessages.length > 0 && allMessages.slice(-2).map((message, index) => (
+                      <div
+                        key={`last-message-${index}`}
+                        className={`flex ${
+                          message.type === 'user' ? 'justify-end' : 'justify-start'
+                        } mb-4`}
+                      >
+                        <div
+                          className={`max-w-[80%] rounded-lg p-3 ${
+                            message.type === 'user' 
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-100 text-gray-900'
+                          }`}
+                        >
+                          {message.content}
+                        </div>
+                      </div>
+                    ))}
+                    <div ref={messagesEndRef} className="h-5" />
                   </div>
                 </ScrollArea>
 
-                {showResults && (
-                  <div className="border-t pt-2 px-3 overflow-hidden">
-                    <Collapsible open={!booksCollapsed} onOpenChange={(open) => setBooksCollapsed(!open)}>
-                      <CollapsibleTrigger asChild>
-                        <div className="flex justify-between items-center mb-2 cursor-pointer">
-                          <h3 className="text-base font-medium">Gefundene Bücher</h3>
-                          <ChevronDown className={`h-4 w-4 transform transition-transform ${booksCollapsed ? '' : 'rotate-180'}`} />
-                        </div>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent forceMount className={`${booksCollapsed ? 'hidden' : 'block'}`}>
-                        <div className="grid grid-cols-1 gap-3 max-h-[30vh] overflow-y-auto pb-3">
-                          {books.map((book) => (
-                            <Card key={book.id} className="overflow-hidden">
-                              <CardContent className="p-3">
-                                <div className="flex justify-between items-start mb-1">
-                                  <h4 className="font-semibold text-sm">{book.title}</h4>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    onClick={() => openBookDetails(book)}
-                                    disabled={isLoadingBookDetails}
-                                    className="h-6 w-6 p-0"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                                <p className="text-xs text-gray-600 mb-1">{book.author}</p>
-                                
-                                <div className="flex items-center gap-1 mb-1 flex-wrap">
-                                  <Badge variant="outline" className="text-xs">{book.subject}</Badge>
-                                  <Badge variant="outline" className="text-xs">{book.level}</Badge>
-                                  <Badge 
-                                    variant="secondary"
-                                    className="ml-auto text-xs"
-                                  >
-                                    {(book.similarity * 100).toFixed()}% Ähnlichkeit
-                                  </Badge>
-                                </div>
-                                
-                                <p className="text-xs text-gray-700 line-clamp-2">{book.description}</p>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                {showResults && books.length > 0 && (
+                  <div className="pt-0 px-0 mb-20 bg-white z-10 relative flex-grow">
+                    <div className="bg-gray-100 px-4 py-3 mb-2 font-medium">
+                      Gefundene Bücher ({books.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 overflow-y-auto px-3 pb-24" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                      {books.map((book) => (
+                        <Card key={book.id} className="overflow-hidden border-l-4 border-l-blue-400">
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className="font-semibold">{book.title}</h4>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => openBookDetails(book)}
+                                disabled={isLoadingBookDetails}
+                                className="h-8 px-2 ml-2"
+                              >
+                                <Eye className="h-3 w-3 mr-1" />
+                                <span className="text-xs">Details</span>
+                              </Button>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-2">{book.author}</p>
+                            
+                            <div className="flex items-center gap-2 mb-3 flex-wrap">
+                              <Badge variant="outline">{book.subject}</Badge>
+                              <Badge variant="outline">{book.level}</Badge>
+                              <Badge 
+                                variant="secondary"
+                                className="ml-auto"
+                              >
+                                {(book.similarity * 100).toFixed()}% Ähnlichkeit
+                              </Badge>
+                            </div>
+                            
+                            <p className="text-sm text-gray-700 line-clamp-3">{book.description}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -610,7 +644,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                 )}
               </div>
 
-              <div className={`border-t py-2 px-3 flex flex-shrink-0 ${keyboardOpen ? 'mb-0' : 'mb-3'}`}>
+              <div className={`border-t py-3 px-3 flex flex-shrink-0 fixed bottom-0 left-0 right-0 bg-white shadow-lg z-20 ${keyboardOpen ? 'mb-0' : ''}`}>
                 <div className="flex gap-2 w-full">
                   <Input
                     ref={inputRef}
@@ -619,12 +653,14 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                     onChange={handleInputChange}
                     onKeyDown={handleKeyPress}
                     disabled={isLoading}
-                    className="flex-1"
+                    className="flex-1 text-[16px] h-10"
+                    style={{ touchAction: "manipulation" }}
                   />
                   <Button 
                     onClick={handleSearch} 
                     disabled={isLoading || !inputValue.trim()}
                     size="icon"
+                    className="h-10 w-10"
                   >
                     <Send className="h-4 w-4" />
                   </Button>
