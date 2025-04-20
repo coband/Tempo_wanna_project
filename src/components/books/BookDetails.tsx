@@ -88,7 +88,7 @@ function BookDetails({
             availableType: typeof data.available
           });
           
-          setBookData(data);
+          setBookData(data as unknown as Book);
         } else {
           console.warn("Keine Daten für Buch mit ID", initialBook.id, "gefunden");
           setBookData(initialBook);
@@ -228,13 +228,17 @@ function BookDetails({
         `}
         style={isMobile ? {
           position: 'fixed',
-          transform: 'none'
+          transform: 'none',
+          height: '100dvh',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column'
         } : {}}
       >
         {isMobile ? (
           <>
             <MobileHeader />
-            <div className="pt-14 pb-6">
+            <div className="pt-14 pb-6 flex-1 overflow-y-auto">
               {/* Mobile Titel & Autor Bereich */}
               <div className="px-4 py-5">
                 <h1 className="text-2xl font-bold">{book.title}</h1>
@@ -256,7 +260,7 @@ function BookDetails({
               </div>
               
               {/* Mobile Buch Details */}
-              <div className="px-4 space-y-5">
+              <div className="px-4 space-y-5 pb-20">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4 bg-gray-50 rounded-lg p-4">
                   <div>
                     <p className="text-sm font-medium text-gray-500">ISBN</p>

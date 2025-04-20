@@ -24,6 +24,7 @@ interface SearchHeaderProps {
   allBooks?: any[];  // Alle verfügbaren Bücher für die Live-Suche
   isLoading?: boolean;
   currentQuery?: string;
+  isMobile?: boolean;
 }
 
 const SearchHeader = ({
@@ -33,11 +34,29 @@ const SearchHeader = ({
   allBooks = [],  // Standardwert für allBooks
   isLoading = false,
   currentQuery = "",
+  isMobile = false,
 }: SearchHeaderProps) => {
   const [searchQuery, setSearchQuery] = useState(currentQuery);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isMobileView, setIsMobileView] = useState(isMobile);
+
+  // Erkennen der Bildschirmgröße
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+    
+    // Initial check
+    checkIfMobile();
+    
+    // Event listener für Fenstergrößenänderungen
+    window.addEventListener('resize', checkIfMobile);
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkIfMobile);
+  }, []);
 
   // Aktualisiere searchQuery, wenn sich currentQuery ändert
   useEffect(() => {
@@ -199,7 +218,7 @@ const SearchHeader = ({
             <Input
               ref={inputRef}
               type="text"
-              placeholder="Suche nach Titel, Autor, Verlag, Beschreibung..."
+              placeholder={isMobileView ? "Suche nach Titel Autor..." : "Suche nach Titel, Autor, Verlag, Beschreibung..."}
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleKeyDown}
@@ -216,9 +235,8 @@ const SearchHeader = ({
               </button>
             )}
           </div>
-          <Button onClick={handleSearch} disabled={isLoading || !searchQuery.trim()}>
-            <Search className="w-4 h-4 mr-2" />
-            Suchen
+          <Button onClick={handleSearch} disabled={isLoading || !searchQuery.trim()} size="icon" className="h-10 w-10">
+            <Search className="w-4 h-4" />
           </Button>
           <TooltipProvider>
             <Tooltip>
