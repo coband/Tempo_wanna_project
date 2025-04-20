@@ -330,37 +330,37 @@ export function UserManagement() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <DashboardHeader />
-      <div className="container py-6 px-4 max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-800 mb-4 md:mb-0">
-              <UserCircle2 className="inline-block mr-2 h-6 w-6 text-blue-600" />
-              Benutzerverwaltung (Clerk)
+      <div className="container py-4 px-2 sm:py-6 sm:px-4 max-w-6xl mx-auto">
+        <div className="bg-white rounded-lg shadow-sm p-3 sm:p-6 mb-4 sm:mb-6">
+          <div className="flex flex-col mb-4 sm:mb-6">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4">
+              <UserCircle2 className="inline-block mr-2 h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+              Benutzerverwaltung
             </h1>
             
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="relative">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-grow">
                 <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
                   type="text"
                   placeholder="Benutzer suchen..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-full md:w-64"
+                  className="pl-9 w-full"
                 />
               </div>
               
               <Button 
                 variant="outline" 
                 onClick={refreshUsers}
-                className="flex items-center gap-2"
+                className="flex items-center justify-center gap-2 sm:w-auto"
               >
                 <RefreshCw className="h-4 w-4" /> Aktualisieren
               </Button>
             </div>
           </div>
           
-          <div className="mb-6">
+          <div className="mb-4 sm:mb-6 overflow-x-auto">
             <Tabs 
               defaultValue="all" 
               className="w-full"
@@ -379,13 +379,13 @@ export function UserManagement() {
                 }
               }}
             >
-              <TabsList className="mb-4">
-                <TabsTrigger value="all">Alle Benutzer</TabsTrigger>
-                <TabsTrigger value="admins">
+              <TabsList className="mb-4 w-full flex justify-between">
+                <TabsTrigger value="all" className="flex-1 text-xs sm:text-sm">Alle</TabsTrigger>
+                <TabsTrigger value="admins" className="flex-1 text-xs sm:text-sm">
                   Administratoren
                 </TabsTrigger>
-                <TabsTrigger value="blocked">
-                  Gesperrte Benutzer
+                <TabsTrigger value="blocked" className="flex-1 text-xs sm:text-sm">
+                  Gesperrte
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -396,46 +396,51 @@ export function UserManagement() {
           </div>
         
           {filteredUsers.length === 0 ? (
-            <div className="text-center p-8 bg-gray-50 rounded-lg border border-gray-200">
-              <UserCircle2 className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+            <div className="text-center p-4 sm:p-8 bg-gray-50 rounded-lg border border-gray-200">
+              <UserCircle2 className="h-10 w-10 sm:h-12 sm:w-12 text-gray-400 mx-auto mb-3" />
               <h3 className="text-lg font-medium text-gray-800">Keine Benutzer gefunden</h3>
-              <p className="text-gray-500 mt-1">
+              <p className="text-gray-500 mt-1 text-sm sm:text-base">
                 {searchQuery ? `Es wurden keine Benutzer gefunden, die zu "${searchQuery}" passen.` : 
                   "Es wurden keine Benutzer gefunden, die zu den ausgewählten Filtern passen."}
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1">
               {filteredUsers.map((userItem) => (
                 <Card 
                   key={userItem.id} 
                   className={`overflow-hidden ${userItem.is_blocked ? "border-red-300 bg-red-50" : ""}`}
                 >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-lg font-medium">{userItem.email}</CardTitle>
+                  <CardHeader className="pb-2 px-3 sm:px-6 pt-3 sm:pt-6">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="overflow-hidden">
+                        <CardTitle className="text-base sm:text-lg font-medium truncate">{userItem.email}</CardTitle>
                         <CardDescription>
-                          <div className="flex items-center text-xs text-gray-500 mt-1">
-                            <Calendar className="h-3 w-3 mr-1" />
-                            <span>Erstellt: {new Date(userItem.created_at).toLocaleDateString()}</span>
-                            <Separator orientation="vertical" className="mx-2 h-3" />
-                            <Clock className="h-3 w-3 mr-1" />
-                            <span>
-                              {userItem.last_sign_in_at 
-                                ? `Letzte Anmeldung: ${new Date(userItem.last_sign_in_at).toLocaleDateString()}`
-                                : 'Nie angemeldet'}
-                            </span>
+                          <div className="flex flex-col xs:flex-row xs:items-center text-xs text-gray-500 mt-1 gap-1 xs:gap-0">
+                            <div className="flex items-center">
+                              <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
+                              <span className="truncate">Erstellt: {new Date(userItem.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <Separator orientation="vertical" className="mx-2 h-3 hidden xs:block" />
+                            <div className="flex items-center">
+                              <Clock className="h-3 w-3 mr-1 flex-shrink-0" />
+                              <span className="truncate">
+                                {userItem.last_sign_in_at 
+                                  ? `Letzte Anmeldung: ${new Date(userItem.last_sign_in_at).toLocaleDateString()}`
+                                  : 'Nie angemeldet'}
+                              </span>
+                            </div>
                           </div>
                         </CardDescription>
                       </div>
                       
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap">
                         {userItem.roles.map(role => (
                           role && (
                             <Badge 
                               key={role}
                               variant={role === 'superadmin' ? 'destructive' : role === 'admin' ? 'default' : 'secondary'}
+                              className="whitespace-nowrap text-xs"
                             >
                               {role === 'superadmin' ? (
                                 <><ShieldAlert className="h-3 w-3 mr-1" /> SuperAdmin</>
@@ -451,8 +456,8 @@ export function UserManagement() {
                     </div>
                   </CardHeader>
                   
-                  <CardContent className="pb-2">
-                    <div className="flex items-center gap-2 text-sm">
+                  <CardContent className="pb-2 px-3 sm:px-6">
+                    <div className="flex items-center gap-2 text-sm flex-wrap">
                       <Badge 
                         variant={userItem.is_blocked ? "destructive" : "default"}
                         className={`rounded-full px-3 ${!userItem.is_blocked ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}`}
@@ -465,14 +470,14 @@ export function UserManagement() {
                       </Badge>
                       
                       {userItem.is_blocked && userItem.block_reason && (
-                        <span className="text-red-600 text-xs">
+                        <span className="text-red-600 text-xs max-w-full truncate">
                           Grund: {userItem.block_reason}
                         </span>
                       )}
                     </div>
                   </CardContent>
                   
-                  <CardFooter className="pt-3 flex flex-wrap justify-end gap-2 border-t">
+                  <CardFooter className="pt-3 flex flex-wrap justify-end gap-2 border-t px-3 sm:px-6 pb-3 sm:pb-6">
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -481,11 +486,12 @@ export function UserManagement() {
                             size="sm"
                             onClick={() => handleToggleAdmin(userItem.id)}
                             disabled={actionInProgress[userItem.id]}
+                            className="text-xs"
                           >
                             {userItem.roles.includes('admin') ? (
                               <><XCircle className="h-3.5 w-3.5 mr-1" /> Admin entfernen</>
                             ) : (
-                              <><CheckCircle className="h-3.5 w-3.5 mr-1" /> Als Admin festlegen</>
+                              <><CheckCircle className="h-3.5 w-3.5 mr-1" /> Als Admin</>
                             )}
                           </Button>
                         </TooltipTrigger>
@@ -498,8 +504,8 @@ export function UserManagement() {
                     {isSuperAdmin && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <SlidersHorizontal className="h-3.5 w-3.5 mr-1" /> Erweiterte Aktionen
+                          <Button variant="outline" size="sm" className="text-xs">
+                            <SlidersHorizontal className="h-3.5 w-3.5 mr-1" /> Aktionen
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -513,7 +519,7 @@ export function UserManagement() {
                             {userItem.roles.includes('superadmin') ? (
                               <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-red-500" /> SuperAdmin entfernen</>
                             ) : (
-                              <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-amber-500" /> Als SuperAdmin festlegen</>
+                              <><ShieldAlert className="h-3.5 w-3.5 mr-2 text-amber-500" /> Als SuperAdmin</>
                             )}
                           </DropdownMenuItem>
                           
@@ -526,9 +532,9 @@ export function UserManagement() {
                             className={userItem.is_blocked ? "text-green-600" : "text-red-600"}
                           >
                             {userItem.is_blocked ? (
-                              <><Unlock className="h-3.5 w-3.5 mr-2" /> Benutzer entsperren</>
+                              <><Unlock className="h-3.5 w-3.5 mr-2" /> Entsperren</>
                             ) : (
-                              <><Lock className="h-3.5 w-3.5 mr-2" /> Benutzer sperren</>
+                              <><Lock className="h-3.5 w-3.5 mr-2" /> Sperren</>
                             )}
                           </DropdownMenuItem>
                           
@@ -539,7 +545,7 @@ export function UserManagement() {
                             }}
                             disabled={actionInProgress[userItem.id]}
                           >
-                            <RotateCcw className="h-3.5 w-3.5 mr-2 text-blue-500" /> Anmelde-Link senden
+                            <RotateCcw className="h-3.5 w-3.5 mr-2 text-blue-500" /> Anmelde-Link
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -553,7 +559,7 @@ export function UserManagement() {
         
         {/* Block Dialog */}
         <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-[90vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
                 {userToAction?.is_blocked ? 'Benutzer entsperren' : 'Benutzer sperren'}
@@ -596,7 +602,7 @@ export function UserManagement() {
         
         {/* Reset Password Dialog */}
         <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-[90vw] sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Anmelde-Link senden</DialogTitle>
               <DialogDescription>

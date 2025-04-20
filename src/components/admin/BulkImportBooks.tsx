@@ -303,42 +303,42 @@ export function BulkImportBooks() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <DashboardHeader />
-      <div className="container py-6 px-4 max-w-6xl mx-auto">
+      <div className="container py-4 px-2 sm:py-6 sm:px-4 max-w-6xl mx-auto">
         <Card className="bg-white shadow-sm">
-          <CardHeader className="pb-4 border-b">
+          <CardHeader className="pb-3 sm:pb-4 border-b px-3 sm:px-6">
             <div className="flex items-center">
-              <Upload className="w-6 h-6 text-blue-600 mr-2" />
-              <CardTitle className="text-2xl font-bold">Bücher Massenimport</CardTitle>
+              <Upload className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2" />
+              <CardTitle className="text-xl sm:text-2xl font-bold">Bücher Massenimport</CardTitle>
             </div>
-            <CardDescription>
+            <CardDescription className="text-sm sm:text-base">
               Importiere mehrere Bücher über ihre ISBN-Nummern und erstelle automatisch Einträge in der Bibliothek.
             </CardDescription>
           </CardHeader>
           
           <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-            <div className="px-6 pt-4">
+            <div className="px-3 sm:px-6 pt-3 sm:pt-4">
               <TabsList className="grid grid-cols-3 w-full">
-                <TabsTrigger value="isbn" disabled={loading || previewLoading}>
-                  <FileText className="h-4 w-4 mr-2" /> ISBN-Eingabe
+                <TabsTrigger value="isbn" disabled={loading || previewLoading} className="text-xs sm:text-sm py-1.5 sm:py-2">
+                  <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> ISBN
                 </TabsTrigger>
-                <TabsTrigger value="preview" disabled={!previewMode || loading || previewLoading}>
-                  <BookOpen className="h-4 w-4 mr-2" /> Vorschau
+                <TabsTrigger value="preview" disabled={!previewMode || loading || previewLoading} className="text-xs sm:text-sm py-1.5 sm:py-2">
+                  <BookOpen className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Vorschau
                 </TabsTrigger>
-                <TabsTrigger value="results" disabled={!results || loading || previewLoading}>
-                  <CheckCircle2 className="h-4 w-4 mr-2" /> Ergebnisse
+                <TabsTrigger value="results" disabled={!results || loading || previewLoading} className="text-xs sm:text-sm py-1.5 sm:py-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" /> Ergebnisse
                 </TabsTrigger>
               </TabsList>
             </div>
             
-            <CardContent className="pt-6">
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
               <TabsContent value="isbn" className="mt-0">
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   <div>
                     <label className="block text-sm font-medium mb-2">
                       ISBN-Nummern (eine pro Zeile oder durch Kommas getrennt):
                     </label>
                     <Textarea 
-                      className="w-full min-h-[200px] font-mono" 
+                      className="w-full min-h-[150px] sm:min-h-[200px] font-mono text-sm" 
                       value={isbnList}
                       onChange={(e) => setIsbnList(e.target.value)}
                       disabled={previewLoading}
@@ -355,18 +355,18 @@ export function BulkImportBooks() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            className="flex items-center gap-2"
+                            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm"
                             onClick={fetchBookPreviews}
                             disabled={previewLoading || !isbnList.trim()}
                           >
                             {previewLoading ? (
                               <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                                 Verarbeite...
                               </>
                             ) : (
                               <>
-                                <BookOpen className="h-4 w-4" />
+                                <BookOpen className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                 Buchvorschau anzeigen
                               </>
                             )}
@@ -382,14 +382,14 @@ export function BulkImportBooks() {
               </TabsContent>
               
               <TabsContent value="preview" className="mt-0">
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between bg-blue-50 p-3 rounded-md">
-                    <div className="flex items-center gap-2">
-                      <Info className="h-5 w-5 text-blue-600" />
-                      <span className="text-blue-800">Wähle die Bücher aus, die du importieren möchtest.</span>
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-blue-50 p-2 sm:p-3 rounded-md">
+                    <div className="flex items-center gap-2 mb-2 sm:mb-0">
+                      <Info className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+                      <span className="text-blue-800 text-sm">Wähle die Bücher aus, die du importieren möchtest.</span>
                     </div>
                     
-                    <div className="flex gap-2 text-sm">
+                    <div className="flex flex-wrap gap-1 sm:gap-2 text-xs sm:text-sm">
                       <Badge variant="outline" className="bg-white">
                         Gesamt: {stats.total}
                       </Badge>
@@ -407,30 +407,30 @@ export function BulkImportBooks() {
                     </div>
                   </div>
                   
-                  <div className="flex justify-between gap-2 flex-wrap">
-                    <div className="flex gap-2 items-center">
+                  <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+                    <div className="flex gap-2 items-center mb-2 sm:mb-0">
                       <Checkbox
                         id="select-all"
                         checked={isAllSelected}
                         onCheckedChange={() => toggleSelectAll()}
                       />
-                      <label htmlFor="select-all" className="text-sm cursor-pointer">
+                      <label htmlFor="select-all" className="text-xs sm:text-sm cursor-pointer">
                         Alle auswählen
                       </label>
                       
-                      <Separator orientation="vertical" className="h-5 mx-2" />
+                      <Separator orientation="vertical" className="h-4 mx-2 hidden sm:block" />
                       
                       <Button 
                         variant="outline" 
                         size="sm" 
                         onClick={selectOnlyValid}
-                        className="text-xs h-8"
+                        className="text-xs h-7 sm:h-8 ml-auto sm:ml-0"
                       >
-                        Nur valide auswählen
+                        Nur valide
                       </Button>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex justify-between sm:justify-end gap-2">
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -439,8 +439,9 @@ export function BulkImportBooks() {
                               size="sm"
                               onClick={cancelPreview}
                               disabled={loading}
+                              className="text-xs sm:text-sm h-8"
                             >
-                              <RotateCcw className="h-4 w-4 mr-1" />
+                              <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
                               Zurück
                             </Button>
                           </TooltipTrigger>
@@ -454,19 +455,19 @@ export function BulkImportBooks() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
-                              className="flex items-center"
+                              className="flex items-center text-xs sm:text-sm h-8"
                               onClick={importSelectedBooks}
                               disabled={loading || stats.selected === 0}
                             >
                               {loading ? (
                                 <>
-                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                  <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 animate-spin" />
                                   Importiere...
                                 </>
                               ) : (
                                 <>
-                                  <Import className="h-4 w-4 mr-1" />
-                                  {stats.selected} Bücher importieren
+                                  <Import className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
+                                  {stats.selected} importieren
                                 </>
                               )}
                             </Button>
@@ -479,8 +480,8 @@ export function BulkImportBooks() {
                     </div>
                   </div>
                   
-                  <ScrollArea className="h-[350px] rounded-md border p-2">
-                    <div className="space-y-3 pr-3">
+                  <ScrollArea className="h-[250px] sm:h-[350px] rounded-md border p-1 sm:p-2">
+                    <div className="space-y-2 sm:space-y-3 pr-2 sm:pr-3">
                       {bookPreviews.map((book) => (
                         <Collapsible 
                           key={book.isbn} 
@@ -488,36 +489,36 @@ export function BulkImportBooks() {
                             book.error ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-blue-300'
                           }`}
                         >
-                          <div className="flex items-center p-3">
+                          <div className="flex items-center p-2 sm:p-3">
                             <Checkbox 
                               id={`book-${book.isbn}`}
-                              className="mr-3"
+                              className="mr-2 sm:mr-3"
                               checked={book.selected}
                               onCheckedChange={() => toggleBookSelection(book.isbn)}
                               disabled={!!book.error}
                             />
                             
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 sm:gap-2">
                                 {book.error ? (
-                                  <XCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                                  <XCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-600 flex-shrink-0" />
                                 ) : (
-                                  <BookMarked className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                  <BookMarked className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
                                 )}
                                 
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex gap-2 items-center">
-                                    <p className="font-medium truncate">
+                                  <div className="flex flex-col xs:flex-row xs:items-center xs:gap-2">
+                                    <p className="font-medium truncate text-xs sm:text-sm">
                                       {book.title || `ISBN: ${book.isbn}`}
                                     </p>
                                     
-                                    <Badge variant="outline" className="flex-shrink-0">
+                                    <Badge variant="outline" className="flex-shrink-0 text-xs mt-1 xs:mt-0 w-fit">
                                       {book.isbn}
                                     </Badge>
                                   </div>
                                   
                                   {!book.error && (
-                                    <p className="text-sm text-gray-500 truncate">
+                                    <p className="text-xs text-gray-500 truncate">
                                       {book.author || 'Unbekannter Autor'}
                                     </p>
                                   )}
@@ -525,52 +526,52 @@ export function BulkImportBooks() {
                               </div>
                               
                               {book.error && (
-                                <p className="text-sm text-red-600 mt-1">{book.error}</p>
+                                <p className="text-xs text-red-600 mt-1 line-clamp-1">{book.error}</p>
                               )}
                             </div>
                             
                             <CollapsibleTrigger asChild>
-                              <button className="ml-2 p-2 rounded-full hover:bg-gray-100">
-                                <ChevronDown className="h-4 w-4 text-gray-500" />
+                              <button className="ml-1 sm:ml-2 p-1.5 sm:p-2 rounded-full hover:bg-gray-100">
+                                <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
                               </button>
                             </CollapsibleTrigger>
                           </div>
                           
                           <CollapsibleContent>
                             {!book.error ? (
-                              <div className="p-3 pt-0 border-t bg-gray-50">
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                              <div className="p-2 sm:p-3 pt-0 border-t bg-gray-50">
+                                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 text-xs sm:text-sm">
                                   <div className="flex items-center">
-                                    <Calendar className="h-3.5 w-3.5 text-gray-500 mr-2" />
+                                    <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500 mr-1 sm:mr-2" />
                                     <span className="font-medium mr-1">Jahr:</span> 
                                     {book.year || 'N/A'}
                                   </div>
                                   <div className="flex items-center">
-                                    <Bookmark className="h-3.5 w-3.5 text-gray-500 mr-2" />
+                                    <Bookmark className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500 mr-1 sm:mr-2" />
                                     <span className="font-medium mr-1">Fach:</span> 
                                     {book.subject || 'N/A'}
                                   </div>
                                   <div className="flex items-center">
-                                    <GraduationCap className="h-3.5 w-3.5 text-gray-500 mr-2" />
+                                    <GraduationCap className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500 mr-1 sm:mr-2" />
                                     <span className="font-medium mr-1">Stufe:</span> 
                                     {book.level || 'N/A'}
                                   </div>
                                   <div className="flex items-center">
-                                    <School className="h-3.5 w-3.5 text-gray-500 mr-2" />
+                                    <School className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500 mr-1 sm:mr-2" />
                                     <span className="font-medium mr-1">Typ:</span> 
                                     {book.type || 'Lehrmittel'}
                                   </div>
-                                  <div className="flex items-center">
-                                    <Building className="h-3.5 w-3.5 text-gray-500 mr-2" />
+                                  <div className="flex items-center col-span-1 xs:col-span-2 sm:col-span-1">
+                                    <Building className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500 mr-1 sm:mr-2" />
                                     <span className="font-medium mr-1">Schulhaus:</span> 
-                                    {book.school || 'Chriesiweg'}
+                                    <span className="truncate">{book.school || 'Chriesiweg'}</span>
                                   </div>
                                 </div>
                               </div>
                             ) : (
-                              <div className="p-3 pt-0 border-t bg-red-50">
-                                <div className="flex items-center text-sm text-red-700">
-                                  <AlertTriangle className="h-4 w-4 mr-2" />
+                              <div className="p-2 sm:p-3 pt-0 border-t bg-red-50">
+                                <div className="flex items-center text-xs sm:text-sm text-red-700">
+                                  <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2 flex-shrink-0" />
                                   <span>
                                     Dieses Buch kann nicht importiert werden, da ein Fehler aufgetreten ist.
                                   </span>
@@ -586,31 +587,31 @@ export function BulkImportBooks() {
               </TabsContent>
               
               <TabsContent value="results" className="mt-0">
-                <div className="space-y-6">
-                  <div className="bg-green-50 border border-green-200 rounded-md p-4 flex items-start">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                <div className="space-y-4 sm:space-y-6">
+                  <div className="bg-green-50 border border-green-200 rounded-md p-3 sm:p-4 flex items-start">
+                    <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 mt-0.5 mr-2 sm:mr-3 flex-shrink-0" />
                     <div>
-                      <h3 className="font-medium text-green-800">Import abgeschlossen</h3>
-                      <p className="text-green-700 mt-1">
+                      <h3 className="font-medium text-green-800 text-sm sm:text-base">Import abgeschlossen</h3>
+                      <p className="text-green-700 mt-1 text-xs sm:text-sm">
                         Der Import wurde erfolgreich abgeschlossen. Die Bücher wurden in die Datenbank importiert.
                       </p>
                     </div>
                   </div>
                   
                   {results && (
-                    <div className="space-y-4">
-                      <div className="flex flex-wrap gap-3">
-                        <Badge variant="outline" className="flex items-center gap-1 text-sm py-1.5 px-3">
-                          <BookOpen className="h-3.5 w-3.5" />
+                    <div className="space-y-3 sm:space-y-4">
+                      <div className="flex flex-wrap gap-2 sm:gap-3">
+                        <Badge variant="outline" className="flex items-center gap-1 text-xs sm:text-sm py-1 sm:py-1.5 px-2 sm:px-3">
+                          <BookOpen className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                           Gesamt: {results.total}
                         </Badge>
-                        <Badge variant="outline" className="flex items-center gap-1 text-sm py-1.5 px-3 bg-green-50 text-green-700 border-green-200">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        <Badge variant="outline" className="flex items-center gap-1 text-xs sm:text-sm py-1 sm:py-1.5 px-2 sm:px-3 bg-green-50 text-green-700 border-green-200">
+                          <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                           Erfolgreich: {results.successful?.length || 0}
                         </Badge>
                         {results.failed?.length > 0 && (
-                          <Badge variant="outline" className="flex items-center gap-1 text-sm py-1.5 px-3 bg-red-50 text-red-700 border-red-200">
-                            <XCircle className="h-3.5 w-3.5" />
+                          <Badge variant="outline" className="flex items-center gap-1 text-xs sm:text-sm py-1 sm:py-1.5 px-2 sm:px-3 bg-red-50 text-red-700 border-red-200">
+                            <XCircle className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                             Fehlgeschlagen: {results.failed?.length || 0}
                           </Badge>
                         )}
@@ -619,21 +620,21 @@ export function BulkImportBooks() {
                       {results.successful?.length > 0 && (
                         <Collapsible className="border rounded-md overflow-hidden">
                           <CollapsibleTrigger asChild>
-                            <button className="w-full bg-green-50 p-3 flex justify-between items-center">
+                            <button className="w-full bg-green-50 p-2 sm:p-3 flex justify-between items-center">
                               <div className="flex items-center">
-                                <CheckCircle2 className="h-4 w-4 text-green-600 mr-2" />
-                                <h4 className="font-medium">Erfolgreich importierte Bücher</h4>
+                                <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 mr-1 sm:mr-2" />
+                                <h4 className="font-medium text-xs sm:text-sm">Erfolgreich importierte Bücher</h4>
                               </div>
-                              <ChevronDown className="h-4 w-4 text-gray-500" />
+                              <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
                             </button>
                           </CollapsibleTrigger>
                           <CollapsibleContent>
-                            <ScrollArea className="h-[200px]">
-                              <div className="p-3 space-y-2">
+                            <ScrollArea className="h-[150px] sm:h-[200px]">
+                              <div className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
                                 {results.successful.map((item: any, index: number) => (
-                                  <div key={index} className="flex items-center text-sm border-b pb-2 last:border-0 last:pb-0">
-                                    <BookMarked className="h-4 w-4 text-green-600 mr-2 flex-shrink-0" />
-                                    <span className="font-medium mr-2">{item.isbn}:</span>
+                                  <div key={index} className="flex items-center text-xs sm:text-sm border-b pb-1.5 sm:pb-2 last:border-0 last:pb-0">
+                                    <BookMarked className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600 mr-1 sm:mr-2 flex-shrink-0" />
+                                    <span className="font-medium mr-1 sm:mr-2">{item.isbn}:</span>
                                     <span className="truncate">{item.data?.title || 'Titel nicht verfügbar'}</span>
                                   </div>
                                 ))}
@@ -646,22 +647,22 @@ export function BulkImportBooks() {
                       {results.failed?.length > 0 && (
                         <Collapsible className="border rounded-md overflow-hidden">
                           <CollapsibleTrigger asChild>
-                            <button className="w-full bg-red-50 p-3 flex justify-between items-center">
+                            <button className="w-full bg-red-50 p-2 sm:p-3 flex justify-between items-center">
                               <div className="flex items-center">
-                                <XCircle className="h-4 w-4 text-red-600 mr-2" />
-                                <h4 className="font-medium">Fehlgeschlagene Importe</h4>
+                                <XCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-600 mr-1 sm:mr-2" />
+                                <h4 className="font-medium text-xs sm:text-sm">Fehlgeschlagene Importe</h4>
                               </div>
-                              <ChevronDown className="h-4 w-4 text-gray-500" />
+                              <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-500" />
                             </button>
                           </CollapsibleTrigger>
                           <CollapsibleContent>
-                            <ScrollArea className="h-[200px]">
-                              <div className="p-3 space-y-2">
+                            <ScrollArea className="h-[150px] sm:h-[200px]">
+                              <div className="p-2 sm:p-3 space-y-1.5 sm:space-y-2">
                                 {results.failed.map((item: any, index: number) => (
-                                  <div key={index} className="flex items-start text-sm border-b pb-2 last:border-0 last:pb-0">
-                                    <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 mr-2 flex-shrink-0" />
+                                  <div key={index} className="flex items-start text-xs sm:text-sm border-b pb-1.5 sm:pb-2 last:border-0 last:pb-0">
+                                    <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 mt-0.5 mr-1 sm:mr-2 flex-shrink-0" />
                                     <div>
-                                      <span className="font-medium mr-2">{item.isbn}:</span>
+                                      <span className="font-medium mr-1 sm:mr-2">{item.isbn}:</span>
                                       <span className="text-red-600">{item.error}</span>
                                     </div>
                                   </div>
@@ -679,8 +680,9 @@ export function BulkImportBooks() {
                             setResults(null);
                             setCurrentTab('isbn');
                           }}
+                          className="text-xs sm:text-sm"
                         >
-                          <RotateCcw className="h-4 w-4 mr-2" />
+                          <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                           Neuer Import
                         </Button>
                       </div>
@@ -693,26 +695,26 @@ export function BulkImportBooks() {
           
           {/* Fortschrittsanzeige */}
           {(loading || previewLoading) && (
-            <div className="px-6 pb-6">
-              <div className="bg-blue-50 p-4 rounded-md border border-blue-200 space-y-3">
+            <div className="px-3 sm:px-6 pb-4 sm:pb-6">
+              <div className="bg-blue-50 p-3 sm:p-4 rounded-md border border-blue-200 space-y-2 sm:space-y-3">
                 <div className="flex justify-between items-center">
-                  <p className="font-medium text-blue-800">{progressStage}</p>
-                  <p className="text-sm text-blue-700">{Math.round(progressPercentage)}%</p>
+                  <p className="font-medium text-blue-800 text-sm sm:text-base">{progressStage}</p>
+                  <p className="text-xs sm:text-sm text-blue-700">{Math.round(progressPercentage)}%</p>
                 </div>
-                <Progress value={progressPercentage} className="w-full h-2" />
-                <p className="text-sm text-blue-700">
-                  <Loader2 className="h-3.5 w-3.5 inline mr-1 animate-spin" />
+                <Progress value={progressPercentage} className="w-full h-1.5 sm:h-2" />
+                <p className="text-xs sm:text-sm text-blue-700">
+                  <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 inline mr-1 animate-spin" />
                   {loading ? 'Bücher werden importiert und Embeddings erstellt...' : 'Buchvorschauen werden geladen...'}
-                  <br />Dies kann einige Minuten dauern, besonders bei größeren Mengen.
+                  <br className="sm:hidden" /><span className="hidden sm:inline"> </span>Dies kann einige Minuten dauern, besonders bei größeren Mengen.
                 </p>
               </div>
             </div>
           )}
           
           {error && (
-            <CardFooter className="pt-0 pb-6">
-              <Alert variant="destructive" className="w-full">
-                <AlertTriangle className="h-4 w-4" />
+            <CardFooter className="pt-0 pb-4 sm:pb-6 px-3 sm:px-6">
+              <Alert variant="destructive" className="w-full text-xs sm:text-sm">
+                <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <AlertTitle>Fehler</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
