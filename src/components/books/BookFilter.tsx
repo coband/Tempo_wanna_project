@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useLayoutEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -96,15 +96,23 @@ export function BookFilter({
   // Setze isFilterOpen initial auf false für konsistentes Verhalten
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Verhindert initiales Rendering mit geöffneten Filtern
+  const [isInitialRender, setIsInitialRender] = useState(true);
 
-  // Überprüfen, ob es sich um ein mobiles Gerät handelt
-  useEffect(() => {
+  // Überprüfen, ob es sich um ein mobiles Gerät handelt und Filter schließen
+  // Verwende useLayoutEffect statt useEffect für bessere visuelle Performance
+  useLayoutEffect(() => {
     const checkIfMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setIsFilterOpen(false);
+      }
     };
     
     // Initial check
     checkIfMobile();
+    setIsInitialRender(false);
     
     // Event listener für Fenstergrößenänderungen
     window.addEventListener('resize', checkIfMobile);
@@ -112,6 +120,13 @@ export function BookFilter({
     // Cleanup
     return () => window.removeEventListener('resize', checkIfMobile);
   }, []);
+
+  // Stelle sicher, dass Filter beim ersten Laden geschlossen sind
+  useEffect(() => {
+    if (isMobile) {
+      setIsFilterOpen(false);
+    }
+  }, [isMobile]);
 
   const toggleLevel = (level: string) => {
     if (selectedLevels.includes(level)) {
@@ -493,12 +508,14 @@ export function BookFilter({
           open={isFilterOpen}
           onOpenChange={setIsFilterOpen}
           className="mb-4"
+          defaultOpen={false}
         >
           <div className="flex items-center justify-between mb-2">
             <CollapsibleTrigger asChild>
               <Button 
                 variant="outline" 
                 className="w-full flex items-center justify-between"
+                onClick={() => setIsFilterOpen(!isFilterOpen)}
               >
                 <div className="flex items-center">
                   <SlidersHorizontal className="mr-2 h-4 w-4" />
@@ -515,8 +532,8 @@ export function BookFilter({
               </Button>
             </CollapsibleTrigger>
           </div>
-          {isFilterOpen && (
-            <CollapsibleContent forceMount className={isFilterOpen ? "block" : "hidden"}>
+          {!isInitialRender && (
+            <CollapsibleContent>
               <FilterContent />
             </CollapsibleContent>
           )}
