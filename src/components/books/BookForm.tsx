@@ -67,6 +67,9 @@ export function BookForm({
   const { user } = useAuth();
   const clerkAuth = useClerkAuth();
 
+  // Gemeinsame Stile für Input-Elemente, um das automatische Zoomen zu verhindern
+  const inputStyles = { fontSize: "16px", touchAction: "manipulation" };
+
   // Angepasste Liste der verfügbaren Stufen
   const availableLevels = [
     "Kindergarten",
@@ -788,6 +791,7 @@ export function BookForm({
                     {...register("author")}
                     placeholder="Autor eingeben"
                     className="w-full"
+                    style={inputStyles}
                   />
                 </div>
 
@@ -799,6 +803,7 @@ export function BookForm({
                       {...register("isbn")}
                       placeholder="ISBN eingeben"
                       className="flex-1"
+                      style={inputStyles}
                     />
                     <Button
                       type="button"
@@ -832,7 +837,7 @@ export function BookForm({
                     control={control}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
+                        <SelectTrigger style={inputStyles}>
                           <SelectValue placeholder="Fach auswählen" />
                         </SelectTrigger>
                         <SelectContent>
@@ -864,7 +869,7 @@ export function BookForm({
                     control={control}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <SelectTrigger>
+                        <SelectTrigger style={inputStyles}>
                           <SelectValue placeholder="Buchtyp auswählen" />
                         </SelectTrigger>
                         <SelectContent>
@@ -886,6 +891,7 @@ export function BookForm({
                     {...register("publisher")}
                     placeholder="Verlag eingeben"
                     className="w-full"
+                    style={inputStyles}
                   />
                 </div>
 
@@ -896,7 +902,7 @@ export function BookForm({
                     control={control}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
-                        <SelectTrigger>
+                        <SelectTrigger style={inputStyles}>
                           <SelectValue placeholder="Schulhaus auswählen" />
                         </SelectTrigger>
                         <SelectContent>
@@ -918,6 +924,7 @@ export function BookForm({
                     {...register("description")}
                     placeholder="Beschreibung eingeben"
                     className="w-full min-h-[100px] p-2 border rounded-md"
+                    style={inputStyles}
                   />
                 </div>
 
@@ -928,6 +935,7 @@ export function BookForm({
                     {...register("location")}
                     placeholder="Ort eingeben"
                     className="w-full"
+                    style={inputStyles}
                   />
                 </div>
 
@@ -949,6 +957,7 @@ export function BookForm({
                     })}
                     placeholder="Jahr eingeben"
                     className="w-full"
+                    style={inputStyles}
                   />
                 </div>
 
@@ -1007,6 +1016,7 @@ export function BookForm({
                   {...register("author")}
                   placeholder="Autor eingeben"
                   className="w-full"
+                  style={inputStyles}
                 />
               </div>
 
@@ -1018,6 +1028,7 @@ export function BookForm({
                     {...register("isbn")}
                     placeholder="ISBN eingeben"
                     className="flex-1"
+                    style={inputStyles}
                   />
                   <Button
                     type="button"
@@ -1038,7 +1049,7 @@ export function BookForm({
                   </Button>
                 </div>
                 {isLoadingBookInfo && (
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-sm text-muted-foreground mt-1">
                     Lade Buchinformationen...
                   </div>
                 )}
@@ -1051,7 +1062,7 @@ export function BookForm({
                   control={control}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
+                      <SelectTrigger style={inputStyles}>
                         <SelectValue placeholder="Fach auswählen" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1083,7 +1094,7 @@ export function BookForm({
                   control={control}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger>
+                      <SelectTrigger style={inputStyles}>
                         <SelectValue placeholder="Buchtyp auswählen" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1105,6 +1116,7 @@ export function BookForm({
                   {...register("publisher")}
                   placeholder="Verlag eingeben"
                   className="w-full"
+                  style={inputStyles}
                 />
               </div>
 
@@ -1115,7 +1127,7 @@ export function BookForm({
                   control={control}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
-                      <SelectTrigger>
+                      <SelectTrigger style={inputStyles}>
                         <SelectValue placeholder="Schulhaus auswählen" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1137,6 +1149,7 @@ export function BookForm({
                   {...register("description")}
                   placeholder="Beschreibung eingeben"
                   className="w-full min-h-[100px] p-2 border rounded-md"
+                  style={inputStyles}
                 />
               </div>
 
@@ -1147,6 +1160,7 @@ export function BookForm({
                   {...register("location")}
                   placeholder="Ort eingeben"
                   className="w-full"
+                  style={inputStyles}
                 />
               </div>
 
@@ -1168,6 +1182,7 @@ export function BookForm({
                   })}
                   placeholder="Jahr eingeben"
                   className="w-full"
+                  style={inputStyles}
                 />
               </div>
 
