@@ -203,7 +203,8 @@ const SearchHeader = ({
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleKeyDown}
-              className="pr-10"
+              className="pr-10 text-[16px]"
+              style={{ touchAction: "manipulation" }}
               onFocus={() => setIsDropdownOpen(searchQuery.trim().length > 0)}
             />
             {searchQuery && (
