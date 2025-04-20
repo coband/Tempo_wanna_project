@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { Camera, ChevronDown, X, ChevronLeft } from "lucide-react";
+import { Camera, ChevronDown, X, ChevronLeft, Check } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
 import React from "react";
 import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS } from "@/lib/constants";
 
@@ -52,9 +61,29 @@ export function BookForm({
   const [showScanner, setShowScanner] = useState(false);
   const [isLoadingBookInfo, setIsLoadingBookInfo] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
+  const [levelPopoverOpen, setLevelPopoverOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const clerkAuth = useClerkAuth();
+
+  // Angepasste Liste der verfügbaren Stufen
+  const availableLevels = [
+    "Kindergarten",
+    "1. Klasse", 
+    "2. Klasse", 
+    "3. Klasse", 
+    "4. Klasse", 
+    "5. Klasse", 
+    "6. Klasse"
+  ];
+
+  // Zyklus-Definitionen
+  const cycleOptions = [
+    { name: "Zyklus 1", levels: ["1. Klasse", "2. Klasse"] },
+    { name: "Zyklus 2", levels: ["3. Klasse", "4. Klasse"] },
+    { name: "Zyklus 3", levels: ["5. Klasse", "6. Klasse"] },
+  ];
 
   // Mobile Erkennung
   useEffect(() => {
@@ -99,12 +128,21 @@ export function BookForm({
     if (open) {
       // Nur wenn der Dialog geöffnet wird
       if (initialBook) {
+        // Konvertiere String in Array, falls gespeichert als komma-getrennte Werte
+        const initialLevels = initialBook.level 
+          ? typeof initialBook.level === 'string' 
+            ? initialBook.level.split(',') 
+            : [initialBook.level]
+          : [];
+          
+        setSelectedLevels(initialLevels);
+          
         const formValues = {
           title: initialBook.title,
           author: initialBook.author,
           isbn: initialBook.isbn,
           subject: initialBook.subject,
-          level: initialBook.level,
+          level: initialLevels.join(','), // Speicher als komma-getrennter String
           year: initialBook.year,
           location: initialBook.location,
           available: initialBook.available,
@@ -122,6 +160,7 @@ export function BookForm({
           setValue("type", initialBook.type, { shouldValidate: true });
         }, 100);
       } else {
+        setSelectedLevels([]);
         reset({
           title: "",
           author: "",
@@ -163,6 +202,16 @@ export function BookForm({
   };
 
   const onSubmitForm = async (data: NewBook) => {
+    // Prüfen ob der Titel vorhanden ist
+    if (!data.title || data.title.trim() === '') {
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: "Bitte geben Sie einen Titel ein. Der Titel ist erforderlich.",
+      });
+      return;
+    }
+    
     try {
       setIsLoading(true);
       if (initialBook) {
@@ -171,8 +220,8 @@ export function BookForm({
         await onSubmit({ ...data, user_id: user.id });
       }
       toast({
-        title: "Success",
-        description: `Book ${initialBook ? "updated" : "created"} successfully`,
+        title: "Erfolg",
+        description: `Buch wurde erfolgreich ${initialBook ? "aktualisiert" : "erstellt"}.`,
       });
       reset();
       onOpenChange(false);
@@ -181,10 +230,10 @@ export function BookForm({
       const errorMessage =
         error instanceof Error
           ? error.message
-          : `Failed to ${initialBook ? "update" : "create"} book`;
+          : `Fehler beim ${initialBook ? "Aktualisieren" : "Erstellen"} des Buches.`;
       toast({
         variant: "destructive",
-        title: "Error",
+        title: "Fehler",
         description: errorMessage,
       });
     } finally {
@@ -238,12 +287,25 @@ export function BookForm({
       availableSubjects.push(tmpSubject);
     }
     
+    // Stufen aus dem Buch extrahieren, falls vorhanden
+    let levels: string[] = [];
+    if (bookInfo.level) {
+      if (typeof bookInfo.level === 'string') {
+        // String oder kommagetrennte Werte
+        levels = bookInfo.level.split(',').map((level: string) => level.trim());
+      } else if (Array.isArray(bookInfo.level)) {
+        // Array
+        levels = bookInfo.level;
+      }
+    }
+    setSelectedLevels(levels);
+    
     // Werte setzen
     setValue("isbn", bookInfo.isbn || "");
     setValue("title", bookInfo.title || "");
     setValue("author", bookInfo.author || "");
     setValue("subject", tmpSubject);
-    setValue("level", bookInfo.level || "");
+    setValue("level", levels.join(','));
     setValue("year", bookInfo.year || new Date().getFullYear());
     setValue("location", bookInfo.location || "Bibliothek");
     setValue("description", bookInfo.description || "");
@@ -262,6 +324,54 @@ export function BookForm({
     
     // Fokus setzen
     setTimeout(ensureDialogSharpness, 50);
+  };
+
+  // Aktualisiert das Level-Feld wenn sich die ausgewählten Stufen ändern
+  useEffect(() => {
+    setValue('level', selectedLevels.join(','));
+  }, [selectedLevels, setValue]);
+
+  // Hilfsfunktion zum Umschalten einer Stufe
+  const toggleLevel = (level: string) => {
+    setSelectedLevels(prevLevels => {
+      // Wenn es sich um eine Zyklusoption handelt
+      const cycleOption = cycleOptions.find(cycle => cycle.name === level);
+      
+      if (cycleOption) {
+        // Wenn es ein Zyklus ist, muss geprüft werden, ob alle Klassen dieses Zyklus bereits ausgewählt sind
+        const allCycleClassesSelected = cycleOption.levels.every(l => 
+          prevLevels.includes(l)
+        );
+        
+        if (allCycleClassesSelected) {
+          // Wenn alle bereits ausgewählt sind, entferne sie
+          return prevLevels.filter(l => !cycleOption.levels.includes(l));
+        } else {
+          // Sonst füge fehlende hinzu
+          const newLevels = [...prevLevels];
+          cycleOption.levels.forEach(cycleClass => {
+            if (!newLevels.includes(cycleClass)) {
+              newLevels.push(cycleClass);
+            }
+          });
+          return newLevels;
+        }
+      } else {
+        // Normales Verhalten für einzelne Klassen
+        if (prevLevels.includes(level)) {
+          return prevLevels.filter(l => l !== level);
+        } else {
+          return [...prevLevels, level];
+        }
+      }
+    });
+  };
+
+  // Funktion zum Prüfen, ob ein Zyklus aktiviert ist
+  const isCycleSelected = (cycleName: string) => {
+    const cycle = cycleOptions.find(c => c.name === cycleName);
+    if (!cycle) return false;
+    return cycle.levels.every(level => selectedLevels.includes(level));
   };
 
   const handleScan = async (isbn: string) => {
@@ -336,6 +446,299 @@ export function BookForm({
     </div>
   );
 
+  // Mehrfach-Stufen-Auswahl-Komponente für Mobile Version
+  const MobileLevelSelect = () => (
+    <div className="space-y-2">
+      <div className="relative">
+        <Popover open={levelPopoverOpen} onOpenChange={setLevelPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button 
+              variant="outline" 
+              className="w-full justify-between text-left font-normal"
+            >
+              {selectedLevels.length > 0 ? (
+                <div className="flex flex-wrap gap-1 max-w-[280px] overflow-hidden">
+                  {selectedLevels.length <= 2 ? (
+                    selectedLevels.map(level => (
+                      <Badge key={level} variant="secondary">{level}</Badge>
+                    ))
+                  ) : (
+                    <>
+                      <Badge variant="secondary">{selectedLevels[0]}</Badge>
+                      <Badge variant="secondary">
+                        +{selectedLevels.length - 1} weitere
+                      </Badge>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Stufen auswählen...</span>
+              )}
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent 
+            className="w-full p-2 z-50" 
+            align="center"
+            alignOffset={0}
+            sideOffset={10}
+            avoidCollisions={true}
+            sticky="always"
+            style={{ maxHeight: '80vh', overflowY: 'auto' }}
+          >
+            <div className="space-y-2">
+              {/* Zyklusoptions */}
+              <div>
+                <p className="text-xs font-medium mb-1">Zyklen</p>
+                <div className="grid grid-cols-3 gap-1">
+                  {cycleOptions.map(cycle => (
+                    <div 
+                      key={cycle.name}
+                      className="flex items-center space-x-1 hover:bg-gray-100 p-1 rounded-md cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLevel(cycle.name);
+                      }}
+                    >
+                      <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                        isCycleSelected(cycle.name)
+                          ? "bg-primary border-primary" 
+                          : "border-gray-300"
+                      }`}>
+                        {isCycleSelected(cycle.name) && (
+                          <Check className="h-2 w-2 text-white" />
+                        )}
+                      </div>
+                      <span className="text-sm">{cycle.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="border-t pt-2">
+                <p className="text-xs font-medium mb-1">Stufen</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {availableLevels.map(level => (
+                    <div 
+                      key={level}
+                      className="flex items-center space-x-1 hover:bg-gray-100 p-1 rounded-md cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLevel(level);
+                      }}
+                    >
+                      <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                        selectedLevels.includes(level) 
+                          ? "bg-primary border-primary" 
+                          : "border-gray-300"
+                      }`}>
+                        {selectedLevels.includes(level) && (
+                          <Check className="h-2 w-2 text-white" />
+                        )}
+                      </div>
+                      <span className="text-sm">{level}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-between mt-2 border-t pt-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setSelectedLevels([])}
+                type="button"
+                className="h-7 text-xs px-2"
+              >
+                Alle löschen
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={() => setLevelPopoverOpen(false)}
+                type="button"
+                className="h-7 text-xs px-3"
+              >
+                Fertig
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {selectedLevels.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {selectedLevels.map(level => (
+            <Badge 
+              key={level} 
+              variant="secondary"
+              className="flex items-center gap-1"
+            >
+              {level}
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleLevel(level);
+                }}
+                className="ml-1 rounded-full hover:bg-muted p-0.5"
+                type="button"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // Mehrfach-Stufen-Auswahl-Komponente für Desktop Version
+  const DesktopLevelSelect = () => (
+    <div className="space-y-2">
+      <div className="relative">
+        <Popover open={levelPopoverOpen} onOpenChange={setLevelPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button 
+              variant="outline" 
+              className="w-full justify-between text-left font-normal"
+            >
+              {selectedLevels.length > 0 ? (
+                <div className="flex flex-wrap gap-1 max-w-[280px] overflow-hidden">
+                  {selectedLevels.length <= 3 ? (
+                    selectedLevels.map(level => (
+                      <Badge key={level} variant="secondary">{level}</Badge>
+                    ))
+                  ) : (
+                    <>
+                      <Badge variant="secondary">{selectedLevels[0]}</Badge>
+                      <Badge variant="secondary">{selectedLevels[1]}</Badge>
+                      <Badge variant="secondary">
+                        +{selectedLevels.length - 2} weitere
+                      </Badge>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Stufen auswählen...</span>
+              )}
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent 
+            className="w-[240px] p-2 z-50" 
+            align="center"
+            alignOffset={0}
+            sideOffset={10}
+            avoidCollisions={true}
+            sticky="always"
+            style={{ maxHeight: '80vh', overflowY: 'auto' }}
+          >
+            <div className="space-y-2">
+              {/* Zyklusoptions */}
+              <div>
+                <p className="text-xs font-medium mb-1">Zyklen</p>
+                <div className="space-y-1">
+                  {cycleOptions.map(cycle => (
+                    <div 
+                      key={cycle.name}
+                      className="flex items-center space-x-1 hover:bg-gray-100 p-1 rounded-md cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLevel(cycle.name);
+                      }}
+                    >
+                      <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                        isCycleSelected(cycle.name)
+                          ? "bg-primary border-primary" 
+                          : "border-gray-300"
+                      }`}>
+                        {isCycleSelected(cycle.name) && (
+                          <Check className="h-2 w-2 text-white" />
+                        )}
+                      </div>
+                      <span className="text-sm">{cycle.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="border-t pt-2">
+                <p className="text-xs font-medium mb-1">Stufen</p>
+                <div className="space-y-1">
+                  {availableLevels.map(level => (
+                    <div 
+                      key={level}
+                      className="flex items-center space-x-1 hover:bg-gray-100 p-1 rounded-md cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleLevel(level);
+                      }}
+                    >
+                      <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${
+                        selectedLevels.includes(level) 
+                          ? "bg-primary border-primary" 
+                          : "border-gray-300"
+                      }`}>
+                        {selectedLevels.includes(level) && (
+                          <Check className="h-2 w-2 text-white" />
+                        )}
+                      </div>
+                      <span className="text-sm">{level}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-between mt-2 border-t pt-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setSelectedLevels([])}
+                type="button"
+                className="h-7 text-xs px-2"
+              >
+                Alle löschen
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={() => setLevelPopoverOpen(false)}
+                type="button"
+                className="h-7 text-xs px-3"
+              >
+                Fertig
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {selectedLevels.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {selectedLevels.map(level => (
+            <Badge 
+              key={level} 
+              variant="secondary"
+              className="flex items-center gap-1"
+            >
+              {level}
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleLevel(level);
+                }}
+                className="ml-1 rounded-full hover:bg-muted p-0.5"
+                type="button"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Dialog open={open} onOpenChange={(newOpen) => {
       if (!newOpen) {
@@ -382,7 +785,7 @@ export function BookForm({
                   <Label htmlFor="author">Autor</Label>
                   <Input
                     id="author"
-                    {...register("author", { required: "Autor ist erforderlich" })}
+                    {...register("author")}
                     placeholder="Autor eingeben"
                     className="w-full"
                   />
@@ -393,7 +796,7 @@ export function BookForm({
                   <div className="flex gap-2">
                     <Input
                       id="isbn"
-                      {...register("isbn", { required: "ISBN ist erforderlich" })}
+                      {...register("isbn")}
                       placeholder="ISBN eingeben"
                       className="flex-1"
                     />
@@ -427,7 +830,6 @@ export function BookForm({
                   <Controller
                     name="subject"
                     control={control}
-                    rules={{ required: "Fach ist erforderlich" }}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger>
@@ -447,24 +849,12 @@ export function BookForm({
 
                 <div className="space-y-2">
                   <Label htmlFor="level">Stufe</Label>
-                  <Controller
-                    name="level"
-                    control={control}
-                    render={({ field }) => (
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Stufen auswählen" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LEVELS.map((level) => (
-                            <SelectItem key={level} value={level}>
-                              {level}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                  <input
+                    type="hidden"
+                    id="level"
+                    {...register("level")}
                   />
+                  <MobileLevelSelect />
                 </div>
 
                 <div className="space-y-2">
@@ -472,7 +862,6 @@ export function BookForm({
                   <Controller
                     name="type"
                     control={control}
-                    rules={{ required: "Buchtyp ist erforderlich" }}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value}>
                         <SelectTrigger>
@@ -505,7 +894,6 @@ export function BookForm({
                   <Controller
                     name="school"
                     control={control}
-                    rules={{ required: "Schulhaus ist erforderlich" }}
                     render={({ field }) => (
                       <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
                         <SelectTrigger>
@@ -537,7 +925,7 @@ export function BookForm({
                   <Label htmlFor="location">Ort</Label>
                   <Input
                     id="location"
-                    {...register("location", { required: "Ort ist erforderlich" })}
+                    {...register("location")}
                     placeholder="Ort eingeben"
                     className="w-full"
                   />
@@ -549,7 +937,6 @@ export function BookForm({
                     id="year"
                     type="number"
                     {...register("year", {
-                      required: "Erscheinungsjahr ist erforderlich",
                       valueAsNumber: true,
                       min: {
                         value: 1800,
@@ -617,7 +1004,7 @@ export function BookForm({
                 <Label htmlFor="author">Autor</Label>
                 <Input
                   id="author"
-                  {...register("author", { required: "Autor ist erforderlich" })}
+                  {...register("author")}
                   placeholder="Autor eingeben"
                   className="w-full"
                 />
@@ -628,7 +1015,7 @@ export function BookForm({
                 <div className="flex gap-2">
                   <Input
                     id="isbn"
-                    {...register("isbn", { required: "ISBN ist erforderlich" })}
+                    {...register("isbn")}
                     placeholder="ISBN eingeben"
                     className="flex-1"
                   />
@@ -662,7 +1049,6 @@ export function BookForm({
                 <Controller
                   name="subject"
                   control={control}
-                  rules={{ required: "Fach ist erforderlich" }}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value}>
                       <SelectTrigger>
@@ -682,24 +1068,12 @@ export function BookForm({
 
               <div className="space-y-2">
                 <Label htmlFor="level">Stufe</Label>
-                <Controller
-                  name="level"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value || ""}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Stufen auswählen" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LEVELS.map((level) => (
-                          <SelectItem key={level} value={level}>
-                            {level}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                <input
+                  type="hidden"
+                  id="level"
+                  {...register("level")}
                 />
+                <DesktopLevelSelect />
               </div>
 
               <div className="space-y-2">
@@ -707,7 +1081,6 @@ export function BookForm({
                 <Controller
                   name="type"
                   control={control}
-                  rules={{ required: "Buchtyp ist erforderlich" }}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value}>
                       <SelectTrigger>
@@ -740,7 +1113,6 @@ export function BookForm({
                 <Controller
                   name="school"
                   control={control}
-                  rules={{ required: "Schulhaus ist erforderlich" }}
                   render={({ field }) => (
                     <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
                       <SelectTrigger>
@@ -772,7 +1144,7 @@ export function BookForm({
                 <Label htmlFor="location">Ort</Label>
                 <Input
                   id="location"
-                  {...register("location", { required: "Ort ist erforderlich" })}
+                  {...register("location")}
                   placeholder="Ort eingeben"
                   className="w-full"
                 />
@@ -784,7 +1156,6 @@ export function BookForm({
                   id="year"
                   type="number"
                   {...register("year", {
-                    required: "Erscheinungsjahr ist erforderlich",
                     valueAsNumber: true,
                     min: {
                       value: 1800,
@@ -821,12 +1192,10 @@ export function BookForm({
       </DialogContent>
       
       {showScanner && (
-        <Dialog open={true} onOpenChange={() => setShowScanner(false)}>
-          <BarcodeScanner
-            onScan={handleScan}
-            onClose={() => setShowScanner(false)}
-          />
-        </Dialog>
+        <BarcodeScanner
+          onScan={handleScan}
+          onClose={() => setShowScanner(false)}
+        />
       )}
     </Dialog>
   );
