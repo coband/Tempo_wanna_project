@@ -625,7 +625,8 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                     style={{ 
                       touchAction: "manipulation",
                       WebkitAppearance: "none",
-                      borderRadius: "8px"
+                      borderRadius: "8px",
+                      fontSize: "16px"
                     }}
                   />
                   <Button 
