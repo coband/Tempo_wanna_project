@@ -20,7 +20,7 @@ const BUCKET_NAME = process.env.PDF_BUCKET_NAME || 'books';
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-const MODEL_NAME = 'gemini-2.0-flash'; // Aktuelles Modell verwenden
+const MODEL_NAME = 'gemini-2.5-flash-preview-04-17'; // Aktuelles Modell verwenden
 
 // Initialisierung von Clients
 let supabase: SupabaseClient | null = null;
@@ -184,13 +184,141 @@ async function validateAuth(req: VercelRequest): Promise<{ valid: boolean; userI
   }
 }
 
+/**
+ * Verarbeitet eine PDF-Datei und beantwortet eine Frage dazu mit der Gemini-API
+ * @param pdfPath Pfad zur PDF-Datei im Supabase-Bucket
+ * @param question Die Frage, die zu dieser PDF beantwortet werden soll
+ * @returns Ein Promise, das die Antwort der Gemini-API enthält
+ */
+export async function processPdf(pdfPath: string, question: string): Promise<string> {
+  if (!supabase || !genAI) {
+    throw new Error('API-Clients nicht initialisiert');
+  }
+
+  if (!pdfPath || !question) {
+    throw new Error('PDF-Pfad und Frage müssen angegeben werden');
+  }
+
+  logWithTimestamp(`Verarbeite PDF: ${pdfPath} mit Frage: ${question}`);
+
+  // PDF von Supabase herunterladen
+  const tempDir = path.join('/tmp', 'tempo-pdf-processing');
+  await fs.mkdir(tempDir, { recursive: true });
+  const tempFilePath = path.join(tempDir, `temp-${Date.now()}.pdf`);
+
+  try {
+    // PDF von Supabase herunterladen
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .download(pdfPath);
+
+    if (error || !data) {
+      throw new Error(`Fehler beim Herunterladen der PDF: ${error?.message || 'Keine Daten'}`);
+    }
+
+    // PDF als temporäre Datei speichern
+    const buffer = await data.arrayBuffer();
+    await fs.writeFile(tempFilePath, Buffer.from(buffer));
+    logWithTimestamp(`PDF heruntergeladen und gespeichert in: ${tempFilePath}`);
+    
+    // PDF-Größe prüfen
+    const stats = await fs.stat(tempFilePath);
+    const fileSizeInMB = stats.size / (1024 * 1024);
+    logWithTimestamp(`PDF-Größe: ${fileSizeInMB.toFixed(2)} MB`);
+
+    // PDF verarbeiten mit neuester Gemini API
+    logWithTimestamp('Verarbeite PDF mit Google Gemini API...');
+    
+    // In einen Blob konvertieren für die File API
+    const fileContent = await fs.readFile(tempFilePath);
+    const fileBlob = new Blob([fileContent], { type: 'application/pdf' });
+    
+    // PDF-Datei hochladen
+    const file = await genAI.files.upload({
+      file: fileBlob,
+      config: {
+        displayName: path.basename(pdfPath),
+      },
+    });
+    
+    // Sicherstellen, dass file.name definiert ist
+    const fileName = file.name || `unknown-file-${Date.now()}`;
+    logWithTimestamp(`PDF hochgeladen zur Gemini API mit FileID: ${fileName}`);
+    
+    // Auf Verarbeitung warten
+    let getFile = await genAI.files.get({ name: fileName });
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (getFile.state === 'PROCESSING' && attempts < maxAttempts) {
+      logWithTimestamp(`Aktueller Datei-Status: ${getFile.state}`);
+      logWithTimestamp('Datei wird noch verarbeitet, erneuter Versuch in 2 Sekunden...');
+      
+      // Warten und erneut prüfen
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      getFile = await genAI.files.get({ name: fileName });
+      attempts++;
+    }
+    
+    if (getFile.state === 'FAILED') {
+      throw new Error('Dateiverarbeitung durch die Google Gemini API fehlgeschlagen');
+    }
+    
+    if (attempts >= maxAttempts && getFile.state === 'PROCESSING') {
+      throw new Error('Zeitüberschreitung bei der Dateiverarbeitung durch die Google Gemini API');
+    }
+    
+    // Frage stellen
+    logWithTimestamp(`Stelle Frage: ${question}`);
+    
+    // Inhalt für die Anfrage vorbereiten
+    const content: Array<{text: string} | ReturnType<typeof createPartFromUri>> = [
+      { text: `Ich habe eine Frage zu diesem PDF: ${question}` }
+    ];
+    
+    // Füge die Datei zum Inhalt hinzu
+    if (file.uri && file.mimeType) {
+      const fileContent = createPartFromUri(file.uri, file.mimeType);
+      content.push(fileContent);
+    }
+    
+    // Anfrage an die Gemini API senden
+    const response = await genAI.models.generateContent({
+      model: MODEL_NAME,
+      contents: content,
+    });
+    
+    // Antwort extrahieren
+    const responseText = response.text || "Keine Antwort erhalten";
+    
+    // Aufräumen: Temporäre Datei löschen
+    try {
+      await fs.unlink(tempFilePath);
+      logWithTimestamp('Temporäre PDF-Datei nach Verarbeitung gelöscht');
+    } catch (cleanupError) {
+      console.error('Fehler beim Löschen der temporären Datei:', cleanupError);
+    }
+    
+    return responseText;
+  } catch (error: any) {
+    logWithTimestamp('Fehler bei der PDF-Verarbeitung', error);
+    
+    // Aufräumen, falls die Datei erstellt wurde
+    try {
+      await fs.access(tempFilePath);
+      await fs.unlink(tempFilePath);
+      logWithTimestamp('Temporäre PDF-Datei nach Fehler gelöscht');
+    } catch (e) {
+      // Datei existiert nicht oder kann nicht gelöscht werden, ignorieren
+    }
+    
+    throw error;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS-Präflight-Anfrage
   if (handleCorsPreflightRequest(req, res)) return;
-
-  // Debugging: Log des Origin-Headers
-  const origin = req.headers.origin;
-  console.log("Anfrage-Origin:", origin);
   
   // CORS-Headers setzen
   const corsHeaders = getCorsHeaders(req);
@@ -216,23 +344,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  // Request-Body-Debugging
-  try {
-    console.log('Request-Body:', JSON.stringify(req.body));
-  } catch (e) {
-    console.log('Request-Body konnte nicht als JSON gelesen werden');
-  }
-
   // Authentifizierung prüfen
   const isLocalDevelopment = process.env.NODE_ENV === 'development';
-  console.log('Umgebung:', isLocalDevelopment ? 'Entwicklung' : 'Produktion');
-
-  // Authentifizierung ist immer erforderlich
   let userId = 'default-user';
   const authResult = await validateAuth(req);
   
   if (!authResult.valid) {
-    console.log('Authentifizierung fehlgeschlagen:', authResult.error);
     // Im Entwicklungsmodus trotzdem fortfahren
     if (!isLocalDevelopment) {
       return res.status(401).json({ 
@@ -245,150 +362,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   } else {
     userId = authResult.userId || userId;
-    console.log(`Anfrage wird bearbeitet für Benutzer: ${userId}`);
   }
 
   try {
     // Daten aus dem Request-Body extrahieren
-    const { pdfPath, questions } = req.body;
+    const { pdfPath, question } = req.body;
 
-    if (!pdfPath || !questions || !Array.isArray(questions) || questions.length === 0) {
-      return res.status(400).json({ error: 'pdfPath und ein Array von questions sind erforderlich' });
+    if (!pdfPath || !question) {
+      return res.status(400).json({ error: 'pdfPath und question sind erforderlich' });
     }
 
-    logWithTimestamp(`Verarbeite PDF: ${pdfPath} mit ${questions.length} Fragen`);
-
-    // PDF von Supabase herunterladen
-    const tempDir = path.join('/tmp', 'tempo-pdf-processing');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempFilePath = path.join(tempDir, `temp-${Date.now()}.pdf`);
-
-    try {
-      // PDF von Supabase herunterladen
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .download(pdfPath);
-
-      if (error || !data) {
-        throw new Error(`Fehler beim Herunterladen der PDF: ${error?.message || 'Keine Daten'}`);
-      }
-
-      // PDF als temporäre Datei speichern
-      const buffer = await data.arrayBuffer();
-      await fs.writeFile(tempFilePath, Buffer.from(buffer));
-      logWithTimestamp(`PDF heruntergeladen und gespeichert in: ${tempFilePath}`);
-      
-      // PDF-Größe prüfen
-      const stats = await fs.stat(tempFilePath);
-      const fileSizeInMB = stats.size / (1024 * 1024);
-      logWithTimestamp(`PDF-Größe: ${fileSizeInMB.toFixed(2)} MB`);
-
-      // PDF verarbeiten mit neuester Gemini API
-      logWithTimestamp('Verarbeite PDF mit Google Gemini API...');
-      
-      // In einen Blob konvertieren für die File API
-      const fileContent = await fs.readFile(tempFilePath);
-      const fileBlob = new Blob([fileContent], { type: 'application/pdf' });
-      
-      // PDF-Datei hochladen
-      const file = await genAI.files.upload({
-        file: fileBlob,
-        config: {
-          displayName: path.basename(pdfPath),
-        },
-      });
-      
-      logWithTimestamp(`PDF hochgeladen zur Gemini API mit FileID: ${file.name}`);
-      
-      // Auf Verarbeitung warten
-      let getFile = await genAI.files.get({ name: file.name });
-      let attempts = 0;
-      const maxAttempts = 10;
-      
-      while (getFile.state === 'PROCESSING' && attempts < maxAttempts) {
-        logWithTimestamp(`Aktueller Datei-Status: ${getFile.state}`);
-        logWithTimestamp('Datei wird noch verarbeitet, erneuter Versuch in 2 Sekunden...');
-        
-        // Warten und erneut prüfen
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        getFile = await genAI.files.get({ name: file.name });
-        attempts++;
-      }
-      
-      if (getFile.state === 'FAILED') {
-        throw new Error('Dateiverarbeitung durch die Google Gemini API fehlgeschlagen');
-      }
-      
-      if (attempts >= maxAttempts && getFile.state === 'PROCESSING') {
-        throw new Error('Zeitüberschreitung bei der Dateiverarbeitung durch die Google Gemini API');
-      }
-      
-      // Ergebnisse für alle Fragen sammeln
-      let result: { answers: Array<{ question: string; answer: string }> } = { answers: [] };
-      
-      // Fragen nacheinander stellen
-      for (const question of questions) {
-        logWithTimestamp(`Stelle Frage: ${question}`);
-        
-        try {
-          // Inhalt für die Anfrage vorbereiten
-          const content = [
-            { text: `Ich habe eine Frage zu diesem PDF: ${question}` }
-          ];
-          
-          // Füge die Datei zum Inhalt hinzu
-          if (file.uri && file.mimeType) {
-            const fileContent = createPartFromUri(file.uri, file.mimeType);
-            content.push(fileContent);
-          }
-          
-          // Anfrage an die Gemini API senden
-          const response = await genAI.models.generateContent({
-            model: MODEL_NAME,
-            contents: content,
-          });
-          
-          // Antwort extrahieren
-          const responseText = response.text || "Keine Antwort erhalten";
-          
-          // Zur Ergebnisliste hinzufügen
-          result.answers.push({
-            question,
-            answer: responseText
-          });
-        } catch (error) {
-          console.error(`Fehler beim Stellen der Frage "${question}":`, error);
-          result.answers.push({
-            question,
-            answer: `Fehler: ${error.message || 'Unbekannter Fehler'}`
-          });
-        }
-      }
-      
-      // Aufräumen: Temporäre Datei löschen
-      try {
-        await fs.unlink(tempFilePath);
-        logWithTimestamp('Temporäre PDF-Datei nach Verarbeitung gelöscht');
-      } catch (cleanupError) {
-        console.error('Fehler beim Löschen der temporären Datei:', cleanupError);
-      }
-      
-      // Ergebnisse zurückgeben
-      return res.status(200).json(result);
-    } catch (error) {
-      logWithTimestamp('Fehler beim PDF-Herunterladen oder Verarbeiten', error);
-      
-      // Aufräumen, falls die Datei erstellt wurde
-      try {
-        await fs.access(tempFilePath);
-        await fs.unlink(tempFilePath);
-        logWithTimestamp('Temporäre PDF-Datei nach Fehler gelöscht');
-      } catch (e) {
-        // Datei existiert nicht oder kann nicht gelöscht werden, ignorieren
-      }
-      
-      throw error;
-    }
+    // Verarbeite die PDF und die Frage
+    const answer = await processPdf(pdfPath, question);
+    
+    // Ergebnisse zurückgeben
+    return res.status(200).json({ answer });
   } catch (error: any) {
     console.error('Fehler bei der PDF-Verarbeitung:', error);
     
