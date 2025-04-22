@@ -41,6 +41,10 @@ export function useSupabaseAuth() {
               return fetch(url, options);
             }
 
+            // Token in der Konsole ausgeben und global speichern
+            console.log("JWT Token:", clerkToken);
+      
+
             // Extrahiere Daten aus dem JWT-Token für Benutzerrollen-Management
             try {
               const [, payload] = clerkToken.split('.');

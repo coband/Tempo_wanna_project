@@ -20,30 +20,64 @@ serve(async (req) => {
   try {
     let userId = null;
     let isAuthenticated = false;
+    let isAdmin = false; // Neue Variable für Admin-Prüfung
     
     // JWT Token aus dem Authorization Header extrahieren (optional)
     const authHeader = req.headers.get("Authorization");
     
     if (authHeader) {
       try {
+        // Native Clerk-Supabase Integration: Token direkt verwenden
         const token = authHeader.replace("Bearer ", "");
-        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        const { data: userData, error: userError } = await supabase.auth.getUser(token);
         
-        if (!userError && userData?.user?.id) {
-          userId = userData.user.id;
-          isAuthenticated = true;
-          console.log("Benutzer erfolgreich authentifiziert:", userId);
+        // Client mit dem Token als Authorization Header erstellen
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        });
+        
+        // Teste, ob der Client Zugriff hat, indem wir eine einfache Abfrage machen
+        const { data: authTest, error: authError } = await supabaseClient
+          .from('books')
+          .select('count')
+          .limit(1);
+        
+        if (authError) {
+          console.log("Authentifizierungsfehler:", authError.message);
         } else {
-          console.log("Token-Validierung fehlgeschlagen:", userError);
+          // Extrahiere die User-ID aus dem JWT für Logging-Zwecke
           try {
-            // Evtl. Clerk-Token prüfen
             const tokenParts = token.split(".");
             if (tokenParts.length === 3) {
-              console.log("Token hat eine gültige JWT-Struktur (möglicherweise Clerk-Token).");
+              const payload = JSON.parse(atob(tokenParts[1]));
+              userId = payload.sub || payload.user_id || 'authorized-user';
+              isAuthenticated = true;
+              
+              // Debug Ausgabe
+              console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+              
+              // Benutzerrolle gemäß Clerk-Konfiguration prüfen
+              // "user_role": "{{user.public_metadata.role}}"
+              const userRole = payload.user_role || 
+                             (payload.public_metadata && payload.public_metadata.role) || 
+                             '';
+              
+              // Admin-Rechte prüfen
+              isAdmin = userRole === 'admin' || userRole === 'superadmin';
+              
+              // Entwickler-Account-Prüfung für Backup
+              if (userId === 'user_2u6GF7qf06US4ov8fSpVFojMrkq') {
+                console.log('Entwickler-Account erkannt, Admin-Zugriff gewährt');
+                isAdmin = true;
+              }
+              
+              console.log(`Benutzer erfolgreich authentifiziert: ${userId} mit Rolle "${userRole}", Admin: ${isAdmin}`);
             }
-          } catch (jwtError) {
-            console.error("Fehler bei der JWT-Analyse:", jwtError);
+          } catch (e) {
+            console.log("Konnte User-ID nicht aus Token extrahieren");
           }
         }
       } catch (authError) {
@@ -59,7 +93,20 @@ serve(async (req) => {
     
     console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
     
-    if (!isPreviewMode && !isAuthenticated) {
+    // Für Import-Modus benötigen wir Admin-Rechte
+    if (!isPreviewMode && !isAdmin) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Nur Administratoren können Bücher importieren',
+          message: 'Sie benötigen Admin-Rechte für diese Funktion.'
+        }),
+        {
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      );
+    } else if (!isPreviewMode && !isAuthenticated) {
+      // Für nicht authentifizierte Benutzer
       return new Response(
         JSON.stringify({ 
           error: 'Authentifizierung erforderlich für den Import-Modus',

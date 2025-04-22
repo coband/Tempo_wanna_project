@@ -37,7 +37,7 @@ function prepareVectorSource(book: any): string {
 }
 
 // Funktion zur JWT-Authentifizierung
-function isAuthorized(req: Request): boolean {
+async function isAuthorized(req: Request): Promise<boolean> {
     // Prüfe Authorization Header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -53,18 +53,76 @@ function isAuthorized(req: Request): boolean {
         return true;
     }
     
-    // Für JWT-Token von Clerk
+    // Native Clerk-Supabase Integration: Token direkt verwenden
     try {
-        if (token.split('.').length === 3) {
-            console.log("Autorisierung erfolgt via JWT-Token");
-            return true;
+        // Client mit dem Token als Authorization Header erstellen
+        const authClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+            global: {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            }
+        });
+        
+        // Teste, ob der Client Zugriff hat, indem wir eine einfache Abfrage machen
+        const { data: authTest, error: authError } = await authClient
+            .from('books')
+            .select('count')
+            .limit(1);
+        
+        if (authError) {
+            console.log("Authentifizierungsfehler:", authError.message);
+            return false;
+        } else {
+            // Benutzer hat grundsätzlich Zugriff, aber wir prüfen zusätzlich Admin-Rechte
+            
+            // Extrahiere die User-ID und Rolle aus dem JWT
+            try {
+                const tokenParts = token.split('.');
+                if (tokenParts.length === 3) {
+                    const payload = JSON.parse(
+                        new TextDecoder().decode(
+                            Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
+                        )
+                    );
+                    
+                    // Debug-Ausgabe
+                    console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+                    
+                    // Benutzerrolle gemäß Clerk-Konfiguration prüfen
+                    // "user_role": "{{user.public_metadata.role}}"
+                    const userRole = payload.user_role || 
+                                  (payload.public_metadata && payload.public_metadata.role) || 
+                                  '';
+                    const userId = payload.sub || 'authorized-user';
+                    
+                    // Nur Admins und Superadmins haben Zugriff
+                    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+                    
+                    // Entwickler-Account-Prüfung für Backup
+                    const isDeveloper = userId === 'user_2u6GF7qf06US4ov8fSpVFojMrkq';
+                    
+                    if (isAdmin || isDeveloper) {
+                        console.log(`Admin-Zugriff gewährt für Benutzer ${userId} mit Rolle: ${userRole}`);
+                        return true;
+                    } else {
+                        console.log(`Zugriff verweigert: Benutzer ${userId} hat Rolle "${userRole}", benötigt aber "admin" oder "superadmin"`);
+                        return false;
+                    }
+                }
+            } catch (jwtError) {
+                console.log("JWT konnte nicht dekodiert werden:", jwtError);
+                return false;
+            }
+            
+            // Standardmäßig keinen Zugriff gewähren
+            console.log("Rolle konnte nicht bestimmt werden, verweigere Zugriff");
+            return false;
         }
     } catch (error) {
-        console.error("JWT-Token konnte nicht validiert werden:", error);
+        console.error("Fehler bei der Authentifizierung:", error);
+        return false;
     }
-    
-    console.log("Authorization Header ist vorhanden, aber enthält kein gültiges Token");
-    return false;
 }
 
 serve(async (req) => {
@@ -73,7 +131,7 @@ serve(async (req) => {
     if (corsResponse) return corsResponse;
 
     // Überprüfe JWT-Authentifizierung
-    const isValid = isAuthorized(req);
+    const isValid = await isAuthorized(req);
     if (!isValid) {
         console.error("Unerlaubter Zugriff: Kein gültiges JWT-Token gefunden");
         return new Response(
