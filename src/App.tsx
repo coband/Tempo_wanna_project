@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { Routes, Route, useRoutes } from "react-router-dom";
-import Home from "./components/Home";
+import Home from "./components/home";
 import BookManagement from "./components/dashboard/BookManagement";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserManagement } from "./components/admin/UserManagement";
