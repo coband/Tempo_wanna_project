@@ -43,6 +43,7 @@ interface PdfChatProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   fullScreen?: boolean;
+  initialPdf?: string; // Pfad zu einem initial zu öffnenden PDF
 }
 
 // Hilfsfunktionen für localStorage
@@ -117,7 +118,7 @@ const loadPdfChatHistory = (): PdfChatSession[] => {
   }
 };
 
-export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps) {
+export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: PdfChatProps) {
   // Auth-Client holen
   const { supabase, isAuthenticated } = useSupabaseAuth();
   const { getToken } = useAuth();
@@ -126,8 +127,9 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedPdf, setSelectedPdf] = useState<string>('');
+  const [selectedPdf, setSelectedPdf] = useState<string>(initialPdf || '');
   const [selectedPdfName, setSelectedPdfName] = useState<string>('');
+  const [pendingPdf, setPendingPdf] = useState<string | undefined>(initialPdf); // Speichert das zu ladende PDF
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [chatSessions, setChatSessions] = useState<PdfChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string>(`pdf-chat-${Date.now()}`);
@@ -160,12 +162,16 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
       const history = loadPdfChatHistory();
       setChatSessions(history);
       
+      // Wenn es initialPdf gibt, setze es als pendingPdf
+      if (initialPdf) {
+        setPendingPdf(initialPdf);
+      }
       // Wenn es keinen aktiven Chat gibt, starte einen neuen
-      if (messages.length === 0 && selectedPdf === '') {
+      else if (messages.length === 0 && selectedPdf === '') {
         setCurrentSessionId(`pdf-chat-${Date.now()}`);
       }
     }
-  }, [open]);
+  }, [open, initialPdf]);
 
   // Scroll zum Ende, wenn neue Nachrichten hinzugefügt werden
   useEffect(() => {
@@ -267,9 +273,11 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
   };
 
   const handlePdfSelect = (pdfPath: string) => {
+    console.log("handlePdfSelect aufgerufen mit:", pdfPath);
     const selectedPdfInfo = availablePdfs.find(pdf => pdf.path === pdfPath);
     
     if (selectedPdfInfo) {
+      console.log("PDF gefunden und wird ausgewählt:", selectedPdfInfo);
       setSelectedPdf(pdfPath);
       setSelectedPdfName(selectedPdfInfo.name);
       
@@ -278,68 +286,108 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
         startNewChat();
       }
       
-      // Begrüßungsnachricht hinzufügen
-      setMessages([{
-        type: 'assistant',
-        content: `Ich bin bereit, Fragen zu "${selectedPdfInfo.name}" zu beantworten. Was möchten Sie wissen?`,
-        timestamp: new Date()
-      }]);
-    }
-  };
-
-  // PDFs aus dem Supabase-Bucket laden
-  const fetchPdfsFromBucket = async () => {
-    if (!supabase) {
-      console.error('Supabase-Client nicht initialisiert');
-      return;
-    }
-
-    setIsLoadingPdfs(true);
-    try {
-      // Bucket-Name aus Umgebungsvariablen oder Standardwert
-      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
-      
-      // Alle Dateien im Bucket auflisten
-      const { data, error } = await supabase.storage
-        .from(bucketName)
-        .list();
-      
-      if (error) {
-        throw error;
-      }
-      
-      if (data) {
-        // Nur PDF-Dateien filtern
-        const pdfFiles = data
-          .filter(file => file.name.toLowerCase().endsWith('.pdf'))
-          .map(file => ({
-            path: file.name,
-            // Dateinamen für Anzeige formatieren (Erweiterung entfernen und Unterstriche durch Leerzeichen ersetzen)
-            name: file.name
-              .replace('.pdf', '')
-              .replace(/_/g, ' ')
-          }));
-        
-        setAvailablePdfs(pdfFiles);
-      }
-    } catch (error: any) {
-      console.error('Fehler beim Laden der PDFs:', error);
-      toast({
-        title: "Fehler",
-        description: `PDF-Dateien konnten nicht geladen werden: ${error.message}`,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoadingPdfs(false);
+      // Verzögerung vor dem Hinzufügen der Begrüßungsnachricht (UI-Aktualisierung)
+      setTimeout(() => {
+        // Begrüßungsnachricht hinzufügen
+        setMessages([{
+          type: 'assistant',
+          content: `Ich bin bereit, Fragen zu "${selectedPdfInfo.name}" zu beantworten. Was möchten Sie wissen?`,
+          timestamp: new Date()
+        }]);
+      }, 100);
+    } else {
+      console.error("PDF nicht in der Liste gefunden:", pdfPath, "Verfügbare PDFs:", availablePdfs);
     }
   };
 
   // PDFs laden, wenn die Komponente geöffnet wird und der Benutzer authentifiziert ist
   useEffect(() => {
+    let isMounted = true; // Verhindert Updates nach dem Unmount
+
     if (open && isAuthenticated) {
-      fetchPdfsFromBucket();
+      console.log("Lade PDFs...");
+      // Zuerst setzen wir isLoadingPdfs
+      setIsLoadingPdfs(true);
+
+      // Dann laden wir die PDFs
+      const loadPdfs = async () => {
+        try {
+          // Nur ein einziger API-Aufruf
+          const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+          const { data, error } = await supabase.storage
+            .from(bucketName)
+            .list();
+          
+          if (error) throw error;
+          
+          if (!data || !isMounted) return;
+          
+          // PDF-Dateien filtern und formatieren
+          const pdfFiles = data
+            .filter(file => file.name.toLowerCase().endsWith('.pdf'))
+            .map(file => {
+              // Entferne die ISBN-Nummer am Anfang (Format: ISBN_Name.pdf)
+              const fileName = file.name.replace('.pdf', '');
+              const parts = fileName.split('_');
+              // Wenn es ein Unterstrich gibt und davor steht die ISBN, dann nutzen wir alles nach dem ersten Unterstrich
+              const displayName = parts.length > 1 ? parts.slice(1).join('_') : fileName;
+              
+              return {
+                path: file.name,
+                name: displayName.replace(/_/g, ' ') // Unterstriche durch Leerzeichen ersetzen
+              };
+            });
+          
+          console.log("Gefundene PDFs:", pdfFiles.map(pdf => pdf.path));
+          
+          // Aktualisiere den State mit allen gefundenen PDFs
+          setAvailablePdfs(pdfFiles);
+          
+          // Jetzt erst nach dem pendingPdf suchen, wenn alle PDFs geladen sind
+          if (pendingPdf && isMounted) {
+            console.log("Suche nach pendingPdf:", pendingPdf);
+            const matchingPdf = pdfFiles.find(pdf => pdf.path === pendingPdf);
+            
+            if (matchingPdf) {
+              console.log("PDF gefunden:", matchingPdf);
+              // Das PDF wurde gefunden, wähle es aus
+              setSelectedPdf(pendingPdf);
+              setSelectedPdfName(matchingPdf.name);
+              
+              // Begrüßungsnachricht hinzufügen
+              setMessages([{
+                type: 'assistant',
+                content: `Ich bin bereit, Fragen zu "${matchingPdf.name}" zu beantworten. Was möchten Sie wissen?`,
+                timestamp: new Date()
+              }]);
+              
+              // Zurücksetzen nach erfolgreicher Auswahl
+              setPendingPdf(undefined);
+            } else if (isMounted) {
+              console.warn(`PDF "${pendingPdf}" wurde nicht im Bucket gefunden`);
+              toast({
+                variant: "default",
+                title: "PDF nicht gefunden",
+                description: `Das PDF "${pendingPdf}" konnte nicht gefunden werden.`
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Fehler beim Laden der PDFs:', error);
+        } finally {
+          if (isMounted) {
+            setIsLoadingPdfs(false);
+          }
+        }
+      };
+      
+      loadPdfs();
     }
-  }, [open, isAuthenticated, supabase]);
+    
+    return () => {
+      isMounted = false; // Cleanup, um Memory Leaks zu vermeiden
+    };
+  }, [open, isAuthenticated, pendingPdf, supabase, toast]);
 
   // Komponente für den mobilen Header
   const MobileHeader = () => (
@@ -470,9 +518,14 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
             {(!selectedPdf || messages.length === 0) && (
               <div className="p-4 border-b">
                 <label className="block text-sm font-medium mb-2">PDF auswählen</label>
-                <Select value={selectedPdf} onValueChange={handlePdfSelect} disabled={isLoadingPdfs}>
+                <Select 
+                  key={selectedPdf}
+                  value={selectedPdf} 
+                  onValueChange={handlePdfSelect} 
+                  disabled={isLoadingPdfs}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder={isLoadingPdfs ? "Lade PDFs..." : "PDF auswählen"} />
+                    <SelectValue placeholder={isLoadingPdfs ? "Lade PDFs..." : selectedPdf ? "PDF ausgewählt" : "PDF auswählen"} />
                   </SelectTrigger>
                   <SelectContent>
                     {isLoadingPdfs ? (
@@ -627,9 +680,14 @@ export function PdfChat({ open, onOpenChange, fullScreen = false }: PdfChatProps
             {(!selectedPdf || messages.length === 0) && (
               <div className="p-4 border-b">
                 <label className="block text-sm font-medium mb-2">PDF auswählen</label>
-                <Select value={selectedPdf} onValueChange={handlePdfSelect} disabled={isLoadingPdfs}>
+                <Select 
+                  key={selectedPdf}
+                  value={selectedPdf} 
+                  onValueChange={handlePdfSelect} 
+                  disabled={isLoadingPdfs}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder={isLoadingPdfs ? "Lade PDFs..." : "PDF auswählen"} />
+                    <SelectValue placeholder={isLoadingPdfs ? "Lade PDFs..." : selectedPdf ? "PDF ausgewählt" : "PDF auswählen"} />
                   </SelectTrigger>
                   <SelectContent>
                     {isLoadingPdfs ? (

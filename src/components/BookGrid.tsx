@@ -26,7 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./ui/alert-dialog";
-import { Edit, Plus, Trash2 } from "lucide-react";
+import { Edit, Plus, Trash2, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface BookGridProps {
   books?: Book[];
@@ -46,6 +47,7 @@ interface FilterValues {
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
   const { supabase } = useSupabaseAuth();
+  const navigate = useNavigate();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -210,7 +212,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       if (error) throw error;
       
       // Wenn das Embedding neu erstellt werden sollte
-      if (data && data.length > 0 && data[0].embedding === null) {
+      if (data && data.length > 0 && (data[0] as Book).embedding === null) {
         try {
           console.log("Erstelle Embedding für aktualisiertes Buch:", book.id);
           const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
@@ -271,6 +273,45 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         variant: "destructive",
         title: "Fehler",
         description: "Das Buch konnte nicht gelöscht werden. Bitte versuche es erneut."
+      });
+    }
+  };
+
+  // Funktion zum Finden und Öffnen des PDFs
+  const openPdfChat = async (book: Book) => {
+    try {
+      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+      
+      // PDFs im Bucket auflisten
+      const { data, error } = await supabase.storage
+        .from(bucketName)
+        .list();
+      
+      if (error) {
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        throw new Error("Keine PDFs gefunden");
+      }
+      
+      // Nach PDF mit der ISBN als Präfix suchen
+      const pdfNamePattern = new RegExp(`^${book.isbn}_.*\\.pdf$`, 'i');
+      const matchingPdf = data.find(file => pdfNamePattern.test(file.name));
+      
+      if (!matchingPdf) {
+        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
+      }
+      
+      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
+      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.name)}`);
+      
+    } catch (error: any) {
+      console.error("Fehler beim Öffnen des PDF-Chats:", error);
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: error.message || "Das PDF konnte nicht geladen werden."
       });
     }
   };
@@ -346,7 +387,31 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
                       : '4px solid #ef4444'
                   }}
                 >
-                  <h3 className="font-medium text-base line-clamp-2 mb-1">{book.title}</h3>
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-medium text-base line-clamp-2 mb-1">{book.title}</h3>
+                    {book.has_pdf && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6 p-0 ml-1 shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openPdfChat(book);
+                              }}
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Chat mit PDF</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
                   <p className="text-sm text-gray-500 line-clamp-1 mb-1">{book.author}</p>
                   {book.publisher && (
                     <p className="text-xs text-gray-400 line-clamp-1 mb-2">Verlag: {book.publisher}</p>

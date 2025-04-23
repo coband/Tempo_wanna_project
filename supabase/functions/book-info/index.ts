@@ -275,10 +275,18 @@ serve(async (req) => {
       publisher: bookData.Verlag || "Unbekannt",
     };
 
+    // ISBN-Bereinigungsfunktion - entfernt alle Bindestriche
+    const cleanIsbn = (isbn: string): string => {
+      return isbn ? isbn.replace(/-/g, '') : isbn;
+    };
+
     // Im Vorschaumodus nur Daten zurückgeben, nicht in DB speichern
     if (isPreviewMode) {
       console.log("Vorschaumodus aktiv – kein DB-Eintrag");
-      return new Response(JSON.stringify(formattedBookData), {
+      return new Response(JSON.stringify({
+        ...formattedBookData,
+        isbn: cleanIsbn(formattedBookData.isbn)
+      }), {
         headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     } else {
@@ -290,6 +298,8 @@ serve(async (req) => {
 
     const bookEntry = {
       ...formattedBookData,
+      // Bereinigte ISBN ohne Bindestriche verwenden
+      isbn: cleanIsbn(formattedBookData.isbn),
       user_id: userId,
       created_at: new Date().toISOString(),
       available: true,
