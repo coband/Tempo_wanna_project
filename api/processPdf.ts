@@ -103,6 +103,39 @@ function logWithTimestamp(message: string, data?: any): void {
   }
 }
 
+/**
+ * Konvertiert Markdown-ähnlichen Text in HTML
+ * @param text Der zu konvertierende Text
+ * @returns Formatierter HTML-Text
+ */
+function convertToHtml(text: string | undefined): string {
+  if (!text) return '';
+  
+  // Zeilenumbrüche in <br> umwandeln
+  let html = text.replace(/\n/g, '<br>');
+  
+  // Fettgedruckten Text umwandeln (**text** oder __text__)
+  html = html.replace(/(\*\*|__)(.*?)\1/g, '<strong>$2</strong>');
+  
+  // Kursiven Text umwandeln (*text* oder _text_)
+  html = html.replace(/(\*|_)(.*?)\1/g, '<em>$2</em>');
+  
+  // Überschriften umwandeln
+  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+  
+  // Listen umwandeln
+  html = html.replace(/^\* (.*?)$/gm, '<li>$1</li>');
+  html = html.replace(/^- (.*?)$/gm, '<li>$1</li>');
+  html = html.replace(/^(\d+)\. (.*?)$/gm, '<li>$2</li>');
+  
+  // Listen gruppieren
+  html = html.replace(/(<li>.*?<\/li>)+/g, (match) => `<ul>${match}</ul>`);
+  
+  return html;
+}
+
 // Validieren der Authentifizierung
 async function validateAuth(req: VercelRequest): Promise<{ valid: boolean; userId?: string; error?: string }> {
   // Auth-Header extrahieren
@@ -288,8 +321,11 @@ export async function processPdf(pdfPath: string, question: string): Promise<str
       contents: content,
     });
     
-    // Antwort extrahieren
-    const responseText = response.text || "Keine Antwort erhalten";
+    // Antwort extrahieren und sicherstellen, dass wir einen String haben
+    const responseText = response?.text ?? "Keine Antwort erhalten";
+    
+    // Konvertiere den Text in HTML
+    const htmlResponse = convertToHtml(responseText);
     
     // Aufräumen: Temporäre Datei löschen
     try {
@@ -299,7 +335,7 @@ export async function processPdf(pdfPath: string, question: string): Promise<str
       console.error('Fehler beim Löschen der temporären Datei:', cleanupError);
     }
     
-    return responseText;
+    return htmlResponse;
   } catch (error: any) {
     logWithTimestamp('Fehler bei der PDF-Verarbeitung', error);
     

@@ -424,13 +424,18 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
             ? 'bg-primary text-primary-foreground' 
             : 'bg-muted text-foreground'
         }`}>
-          {/* Text mit Zeilenumbrüchen formatieren */}
-          {message.content.split('\n').map((line, i) => (
-            <React.Fragment key={i}>
-              {line}
-              {i < message.content.split('\n').length - 1 && <br />}
-            </React.Fragment>
-          ))}
+          {message.type === 'user' ? (
+            // Benutzeranfragen normal mit Zeilenumbrüchen anzeigen
+            message.content.split('\n').map((line, i) => (
+              <React.Fragment key={i}>
+                {line}
+                {i < message.content.split('\n').length - 1 && <br />}
+              </React.Fragment>
+            ))
+          ) : (
+            // Für Assistenten-Antworten den HTML-Inhalt rendern
+            <div dangerouslySetInnerHTML={{ __html: message.content }} />
+          )}
         </div>
       </div>
     </div>
