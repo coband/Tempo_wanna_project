@@ -25,10 +25,6 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
     
-    console.log('Supabase URL verfügbar:', !!supabaseUrl);
-    console.log('Supabase Anon Key verfügbar:', !!supabaseAnonKey);
-    console.log('Supabase Service Key verfügbar:', !!supabaseServiceKey);
-
     if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
       return new Response(
         JSON.stringify({ error: 'Supabase Konfiguration fehlt' }),
@@ -116,14 +112,11 @@ serve(async (req) => {
         try {
           const clonedReq = req.clone();
           rawBody = await clonedReq.text();
-          console.log('Request body (RAW):', rawBody);
           
           if (rawBody && rawBody.trim() !== '') {
             try {
               body = JSON.parse(rawBody);
-              console.log('Parsed JSON body:', JSON.stringify(body, null, 2));
               action = body?.action || '';
-              console.log('Erkannte Aktion aus JSON:', action);
             } catch (parseError) {
               console.error('JSON Parse Fehler:', parseError);
               return new Response(
@@ -139,7 +132,6 @@ serve(async (req) => {
               );
             }
           } else {
-            console.log('Leerer Body, setze Standard-Aktion');
             body = {};
             action = 'list-users'; // Standard-Aktion
           }
@@ -341,31 +333,20 @@ serve(async (req) => {
       }
     } else if (action === 'toggle-admin' || action === 'toggle-role') {
       try {
-        // Debug-Modus für das Problem mit toggle-admin/toggle-role
-        console.log(`DEBUG: ${action.toUpperCase()} DEBUG MODUS AKTIV`);
-        
         // Berechtigungen testen mit Service-Rolle
         try {
-          console.log('⚠️ BERECHTIGUNGSTEST: Direkter Versuch mit Service-Role-Key ⚠️');
-          console.log('adminClient konfiguriert mit URL:', supabaseUrl.substring(0, 20) + '...');
-          console.log('adminClient nutzt Service-Key?', !!supabaseServiceKey);
-          
           // Testdaten einfügen und wieder entfernen
           const testUserId = userData.user.id;
           const testRole = 'test_permission';
           
-          console.log(`Füge Testdaten ein für Benutzer ${testUserId}`);
+          // Füge Testdaten ein für Benutzer
           const { data: insertTest, error: insertTestError } = await adminClient
             .from('user_roles')
             .insert([{ user_id: testUserId, role: testRole }]);
             
-          console.log('Test-Insert Ergebnis:', { data: insertTest, error: insertTestError });
-          
           if (insertTestError) {
             console.error('⚠️ BERECHTIGUNGSFEHLER: Service-Role kann nicht in user_roles schreiben:', insertTestError);
           } else {
-            console.log('✅ Service-Role kann in user_roles schreiben');
-            
             // Testdaten wieder entfernen
             const { data: deleteTest, error: deleteTestError } = await adminClient
               .from('user_roles')
@@ -373,12 +354,8 @@ serve(async (req) => {
               .eq('user_id', testUserId)
               .eq('role', testRole);
               
-            console.log('Test-Delete Ergebnis:', { data: deleteTest, error: deleteTestError });
-            
             if (deleteTestError) {
               console.error('⚠️ BERECHTIGUNGSFEHLER: Service-Role kann nicht aus user_roles löschen:', deleteTestError);
-            } else {
-              console.log('✅ Service-Role kann aus user_roles löschen');
             }
           }
         } catch (permError) {

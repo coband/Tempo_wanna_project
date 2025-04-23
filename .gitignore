@@ -35,3 +35,4 @@ dist-ssr
 **/tempobook/storyboards/
 
 core
+.vercel

@@ -52,7 +52,7 @@ function transformClerkUser(user: any) {
 }
 
 // Funktion zur JWT-Authentifizierung
-function isAuthorized(req: Request): boolean {
+async function isAuthorized(req: Request): Promise<boolean> {
   // Prüfe Authorization Header
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -69,18 +69,86 @@ function isAuthorized(req: Request): boolean {
     return true;
   }
   
-  // Für JWT-Token von Clerk
+  // Native Clerk-Supabase Integration: Token direkt verwenden
   try {
-    if (token.split('.').length === 3) {
-      console.log("Autorisierung erfolgt via JWT-Token");
-      return true;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('Supabase-Konfiguration fehlt');
+      return false;
+    }
+    
+    // Import vom createClient
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.8.0');
+    
+    // Client mit dem Token als Authorization Header erstellen
+    const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    });
+    
+    // Teste, ob der Client Zugriff hat
+    const { error: authError } = await authClient.from('books').select('count').limit(1);
+    
+    if (authError) {
+      console.log("Authentifizierungsfehler:", authError.message);
+      return false;
+    } else {
+      console.log("Benutzer erfolgreich authentifiziert via Clerk-Token");
+      
+      // Prüfe, ob der Benutzer ein Superadmin ist
+      try {
+        // JWT-Token dekodieren
+        const tokenParts = token.split('.');
+        if (tokenParts.length === 3) {
+          const payload = JSON.parse(
+            new TextDecoder().decode(
+              Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
+            )
+          );
+          
+          // Debug Ausgabe
+          console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+          
+          // Benutzerrolle gemäß Clerk-Konfiguration prüfen
+          // "user_role": "{{user.public_metadata.role}}"
+          const userRole = payload.user_role || 
+                         (payload.public_metadata && payload.public_metadata.role) || 
+                         '';
+          
+          console.log(`Benutzerrolle für clerk-users Funktion: ${userRole}`);
+          
+          // NUR Superadmin hat Zugriff auf diese Funktion
+          const isSuperAdmin = userRole === 'superadmin';
+          
+          // Entwickler-Account-Prüfung für Backup
+          const userId = payload.sub || '';
+          const isDeveloper = userId === 'user_2u6GF7qf06US4ov8fSpVFojMrkq';
+          
+          if (isSuperAdmin || isDeveloper) {
+            console.log(`Superadmin-Zugriff gewährt für Benutzer mit Rolle: ${userRole}`);
+            return true;
+          } else {
+            console.log(`Zugriff verweigert: Benutzer hat Rolle "${userRole}", benötigt aber "superadmin"`);
+            return false;
+          }
+        }
+      } catch (jwtError) {
+        console.log("JWT konnte nicht dekodiert werden:", jwtError);
+        return false;
+      }
+      
+      // Standardmäßig keinen Zugriff gewähren, wenn die Rollenprüfung fehlschlägt
+      return false;
     }
   } catch (error) {
-    console.error("JWT-Token konnte nicht validiert werden:", error);
+    console.error("Fehler bei der Authentifizierung:", error);
+    return false;
   }
-  
-  console.log("Authorization Header ist vorhanden, aber enthält kein gültiges Token");
-  return false;
 }
 
 serve(async (req) => {
@@ -92,7 +160,7 @@ serve(async (req) => {
   if (preflightResponse) return preflightResponse;
 
   // Überprüfe JWT-Authentifizierung
-  const isValid = isAuthorized(req);
+  const isValid = await isAuthorized(req);
   if (!isValid) {
     console.error("Unerlaubter Zugriff: Kein gültiges JWT-Token gefunden");
     return new Response(

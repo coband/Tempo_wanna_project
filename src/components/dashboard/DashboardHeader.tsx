@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, Users, BookOpen, Upload, Menu, X } from "lucide-react";
+import { LogOut, Users, BookOpen, Upload, Menu, X, FileText } from "lucide-react";
 import { UserButton } from "@clerk/clerk-react";
 import { useState } from "react";
 
@@ -31,6 +31,15 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
       >
         <BookOpen className="h-5 w-5 mr-2" />
         <span>Bücher</span>
+      </Link>
+      
+      <Link
+        to="/pdf-chat"
+        className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/pdf-chat')}`}
+        onClick={() => setMobileMenuOpen(false)}
+      >
+        <FileText className="h-5 w-5 mr-2" />
+        <span>PDF Chat</span>
       </Link>
       
       {/* Benutzerverwaltung nur für Superadmins */}

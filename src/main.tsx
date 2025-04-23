@@ -5,6 +5,7 @@ import "./index.css";
 import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "./components/ui/toaster";
 import { ClerkProvider } from "@clerk/clerk-react";
+import { SupabaseProvider } from "./contexts/SupabaseContext";
 
 // Import and initialize Tempo Devtools
 import { TempoDevtools } from "tempo-devtools";
@@ -20,10 +21,12 @@ if (!clerkPubKey) {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ClerkProvider publishableKey={clerkPubKey}>
-      <BrowserRouter basename={basename}>
-        <App />
-        <Toaster />
-      </BrowserRouter>
+      <SupabaseProvider>
+        <BrowserRouter basename={basename}>
+          <App />
+          <Toaster />
+        </BrowserRouter>
+      </SupabaseProvider>
     </ClerkProvider>
   </React.StrictMode>,
 );

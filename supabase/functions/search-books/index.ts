@@ -23,24 +23,50 @@ serve(async (req) => {
 
     // JWT Token aus dem Authorization Header extrahieren (optional)
     let userId = null; // Kein Standardwert mehr für anonyme Benutzer
+    let isAuthenticated = false;
     const authHeader = req.headers.get('Authorization');
     
     if (authHeader) {
       try {
-        // Versuchen, das Token zu validieren
+        // Native Clerk-Supabase Integration: Token direkt verwenden
         const token = authHeader.replace("Bearer ", "");
-        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-        const { data: userData, error: userError } = await supabaseClient.auth.getUser(token);
         
-        if (!userError && userData?.user?.id) {
-          userId = userData.user.id;
-          console.log("Benutzer erfolgreich authentifiziert:", userId);
-        } else {
-          console.log("Token-Validierung fehlgeschlagen:", userError);
-          
-          // Authentifizierungsfehler für sensible Operationen
-          // Für die Buchsuche erlauben wir dennoch den Zugriff, beschränken aber ggf. die Ergebnisse
+        // Client mit dem Token als Authorization Header erstellen
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        });
+        
+        // Teste, ob der Client Zugriff hat, indem wir eine einfache Abfrage machen
+        const { data: authTest, error: authError } = await supabaseClient
+          .from('books')
+          .select('count')
+          .limit(1);
+        
+        if (authError) {
+          console.log("Authentifizierungsfehler:", authError.message);
           console.log("Hinweis: Nur öffentliche Suchergebnisse werden zurückgegeben");
+        } else {
+          console.log("Benutzer erfolgreich authentifiziert");
+          isAuthenticated = true;
+          
+          // Extrahiere die User-ID aus dem JWT für Logging-Zwecke (optional)
+          try {
+            const tokenParts = token.split('.');
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(atob(tokenParts[1]));
+              userId = payload.sub || payload.user_id || 'authorized-user';
+              console.log("Benutzer-ID aus JWT:", userId);
+              
+              // Debug-Ausgabe zur Diagnose
+              console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+            }
+          } catch (e) {
+            console.log("Konnte User-ID nicht aus Token extrahieren");
+          }
         }
       } catch (authError) {
         console.error("Fehler bei der Authentifizierung:", authError);
@@ -51,6 +77,10 @@ serve(async (req) => {
       // Kein Fallback mehr auf anonymen Benutzer
     }
     
+    // Für die Buchsuche erlauben wir auch nicht authentifizierten Zugang
+    // Aber geben einen Hinweis im Response
+    const isSearchingAsGuest = !isAuthenticated;
+
     // Für sensible Operationen könnten wir hier eine Authentifizierung erzwingen
     // Für die Buchsuche erlauben wir jedoch den Zugang auch ohne Authentifizierung
     // Sensible Buchinformationen könnten später gefiltert werden
@@ -132,6 +162,10 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ 
           books: mergedBooks,
+          isAuthenticated: isAuthenticated, // Neue Eigenschaft für Frontend
+          userMessage: isSearchingAsGuest ? 
+            "Melden Sie sich an, um alle Bücher zu sehen und weitere Funktionen nutzen zu können." : 
+            null,
           debug: { 
             originalQuery: query,
             enhancedQuery: enhancedQuery,

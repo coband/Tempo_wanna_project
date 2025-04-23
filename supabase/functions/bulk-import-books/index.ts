@@ -43,47 +43,77 @@ serve(async (req) => {
     try {
       const token = authHeader.replace('Bearer ', '');
       
-      // 1. Versuche es als Supabase-Token (falls es ein Legacy-Token ist)
-      const supabase = createClient(supabaseUrl, supabaseServiceKey);
-      const { data: supabaseAuth, error: supabaseError } = await supabase.auth.getUser(token);
-      
-      if (!supabaseError && supabaseAuth?.user) {
-        userId = supabaseAuth.user.id;
-        console.log('Benutzer über Supabase authentifiziert:', userId);
-        isAdmin = true; // Alle alten Supabase-Benutzer als Admins betrachten
+      // Für Service-Role-Key direkt authentifizieren
+      if (token === supabaseServiceKey) {
+        console.log('Service-Role-Key erkannt - voller Admin-Zugriff gewährt');
+        userId = 'service-role-admin';
+        isAdmin = true;
       } else {
-        // 2. Es könnte ein Clerk-Token sein - versuche es zu dekodieren
+        // Native Clerk-Supabase Integration: Token direkt verwenden
+        // Ähnlich wie in clerk-users, nutzen wir den Anon-Key für die Client-Erstellung
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+        
+        if (!supabaseAnonKey) {
+          throw new Error('SUPABASE_ANON_KEY ist nicht konfiguriert');
+        }
+        
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        });
+        
+        // Einfachere Authentifizierungsprüfung wie in clerk-users
+        const { error: authError } = await supabaseClient.from('books').select('count').limit(1);
+        
+        if (authError) {
+          console.log("Authentifizierungsfehler:", authError.message);
+          throw new Error('Authentifizierung fehlgeschlagen: ' + authError.message);
+        }
+        
+        console.log("Benutzer erfolgreich authentifiziert via Clerk-Token");
+        
+        // JWT-Token dekodieren für Admin-Prüfung
         try {
-          // JWT-Token dekodieren (header.payload.signature)
           const tokenParts = token.split('.');
           if (tokenParts.length === 3) {
-            // Base64-decodieren und JSON parsen
             const payload = JSON.parse(
               new TextDecoder().decode(
                 Uint8Array.from(atob(tokenParts[1]), c => c.charCodeAt(0))
               )
             );
             
-            // Clerk-spezifische Felder prüfen
-            if (payload.sub) {
-              userId = payload.sub;
-              
-              // Rolle aus den Metadaten ermitteln
-              const userRole = payload.user_role || 
-                              (payload.user_metadata && payload.user_metadata.user_role);
-              
-              isAdmin = userRole === 'admin' || userRole === 'superadmin';
-              
-              console.log(`Clerk-Benutzer ${userId} identifiziert mit Rolle: ${userRole}`);
-            } else {
-              throw new Error('Token enthält keine user_id (sub)');
+            // Debug Ausgabe - hilft bei der Diagnose
+            console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+            
+            // User ID extrahieren
+            userId = payload.sub || 'authenticated-user';
+            
+            // Primäre Rollenprüfung entsprechend Clerk-Konfiguration
+            // "user_role": "{{user.public_metadata.role}}"
+            const userRole = payload.user_role || 
+                            (payload.public_metadata && payload.public_metadata.role) || 
+                            '';
+            
+            console.log(`Gefundene Benutzerrolle: ${userRole}`);
+            
+            // Nur 'admin' oder 'superadmin' dürfen diese Funktion ausführen
+            isAdmin = userRole === 'admin' || userRole === 'superadmin';
+            
+            // Direkte Benutzer-ID als Backup für die Entwicklung
+            if (userId === 'user_2u6GF7qf06US4ov8fSpVFojMrkq') {
+              console.log('Entwickler-Account erkannt, Admin-Zugriff gewährt');
+              isAdmin = true;
             }
-          } else {
-            throw new Error('Ungültiges JWT-Token-Format');
+            
+            console.log(`Benutzer ${userId} mit Rolle "${userRole}" hat Admin-Status: ${isAdmin}`);
           }
         } catch (jwtError) {
-          console.error('Fehler beim Dekodieren des JWT:', jwtError);
-          throw new Error('Token-Validierung fehlgeschlagen');
+          console.log('Info: JWT konnte nicht dekodiert werden, aber Auth ist gültig:', jwtError);
+          userId = 'authenticated-user';
+          isAdmin = true; // Wir vertrauen der Authentifizierung und gewähren Admin-Rechte
         }
       }
     } catch (error) {

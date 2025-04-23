@@ -20,30 +20,64 @@ serve(async (req) => {
   try {
     let userId = null;
     let isAuthenticated = false;
+    let isAdmin = false; // Neue Variable für Admin-Prüfung
     
     // JWT Token aus dem Authorization Header extrahieren (optional)
     const authHeader = req.headers.get("Authorization");
     
     if (authHeader) {
       try {
+        // Native Clerk-Supabase Integration: Token direkt verwenden
         const token = authHeader.replace("Bearer ", "");
-        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        const { data: userData, error: userError } = await supabase.auth.getUser(token);
         
-        if (!userError && userData?.user?.id) {
-          userId = userData.user.id;
-          isAuthenticated = true;
-          console.log("Benutzer erfolgreich authentifiziert:", userId);
+        // Client mit dem Token als Authorization Header erstellen
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        });
+        
+        // Teste, ob der Client Zugriff hat, indem wir eine einfache Abfrage machen
+        const { data: authTest, error: authError } = await supabaseClient
+          .from('books')
+          .select('count')
+          .limit(1);
+        
+        if (authError) {
+          console.log("Authentifizierungsfehler:", authError.message);
         } else {
-          console.log("Token-Validierung fehlgeschlagen:", userError);
+          // Extrahiere die User-ID aus dem JWT für Logging-Zwecke
           try {
-            // Evtl. Clerk-Token prüfen
             const tokenParts = token.split(".");
             if (tokenParts.length === 3) {
-              console.log("Token hat eine gültige JWT-Struktur (möglicherweise Clerk-Token).");
+              const payload = JSON.parse(atob(tokenParts[1]));
+              userId = payload.sub || payload.user_id || 'authorized-user';
+              isAuthenticated = true;
+              
+              // Debug Ausgabe
+              console.log('JWT Payload:', JSON.stringify(payload, null, 2));
+              
+              // Benutzerrolle gemäß Clerk-Konfiguration prüfen
+              // "user_role": "{{user.public_metadata.role}}"
+              const userRole = payload.user_role || 
+                             (payload.public_metadata && payload.public_metadata.role) || 
+                             '';
+              
+              // Admin-Rechte prüfen
+              isAdmin = userRole === 'admin' || userRole === 'superadmin';
+              
+              // Entwickler-Account-Prüfung für Backup
+              if (userId === 'user_2u6GF7qf06US4ov8fSpVFojMrkq') {
+                console.log('Entwickler-Account erkannt, Admin-Zugriff gewährt');
+                isAdmin = true;
+              }
+              
+              console.log(`Benutzer erfolgreich authentifiziert: ${userId} mit Rolle "${userRole}", Admin: ${isAdmin}`);
             }
-          } catch (jwtError) {
-            console.error("Fehler bei der JWT-Analyse:", jwtError);
+          } catch (e) {
+            console.log("Konnte User-ID nicht aus Token extrahieren");
           }
         }
       } catch (authError) {
@@ -59,7 +93,20 @@ serve(async (req) => {
     
     console.log(`Modus: ${isPreviewMode ? 'Vorschau' : 'Import'} für ISBN: ${isbn}`);
     
-    if (!isPreviewMode && !isAuthenticated) {
+    // Für Import-Modus benötigen wir Admin-Rechte
+    if (!isPreviewMode && !isAdmin) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Nur Administratoren können Bücher importieren',
+          message: 'Sie benötigen Admin-Rechte für diese Funktion.'
+        }),
+        {
+          headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+          status: 403,
+        }
+      );
+    } else if (!isPreviewMode && !isAuthenticated) {
+      // Für nicht authentifizierte Benutzer
       return new Response(
         JSON.stringify({ 
           error: 'Authentifizierung erforderlich für den Import-Modus',
@@ -110,7 +157,7 @@ serve(async (req) => {
     console.log("API-Objekt erstellt");
     
     // Prompt für die Buchinformationen
-    const prompt = `Bitte verwende unbedingt die Google-Suche, um genaue Informationen zu diesem Buch zu finden: Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein (1., 2., 3. Klasse gehören zur Unterstufe, 4., 5., 6. Klasse gehören Mittelstufe und 7., 8., 9. Klasse gehören zur Oberstufe, 1.-6. Klasse ist Grundschule), 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache (DaZ), Förderung (IF) Divers), 'Erscheinungsjahr', 'Typ' (Verwende ausschliesslich: Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial(Spiele, Karten etc.)), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`;
+    const prompt = `Bitte verwende unbedingt die Google-Suche, um genaue Informationen zu diesem Buch zu finden: Suche nach dem Buch mit der ISBN ${isbn}. Gib die Informationen ausschließlich als valides JSON-Objekt zurück, ohne zusätzlichen Text. Das JSON sollte folgende Felder enthalten: 'Titel', 'Autor', 'ISBN', 'Stufe' (Kindergarten, 1. Klasse, 2. Klasse, 3. Klasse, 4. Klasse, 5. Klasse, 6. Klasse) es könenn auch mehrere Stufen sein, 'Fach' (Mathematik, Deutsch, Französisch, NMG, Sport, Musik, Englisch, Bildnerisches Gestalten, TTG, Medien und Informatik, Deutsch als Zweitsprache, Förderung, Divers), 'Erscheinungsjahr', 'Typ' (Lehrmittel, Lesebuch, Fachbuch, Sachbuch, Comic, Bilderbuch, Lernmaterial), 'Verlag', 'Beschreibung'. Es sollte eine allgemeine Beschriebung sein, in der steht welche Themen im Lehrmittel/Buch behandelt werden und für welches Schuljahre es ist. Wenn es sich beim Fach um Deutsch als Zweitsprache handelt, dann füge auch immer noch das Fach "Deutsch" hinzu. Beim Typ "Lernmateial" sind Spiele, Karten, Poster etc. gemeint. Wenn eine Information nicht verfügbar ist, verwende null als Wert.`;
 
     console.log("Sende Anfrage an Gemini API...");
     
@@ -125,7 +172,7 @@ serve(async (req) => {
           tools: [{googleSearch: {}}],
           systemInstruction: [
             {
-              text: 'Du bist ein präziser Buchinformations-Assistent. Deine Aufgabe ist es, genaue Daten zu Büchern oder Lernmaterialien basierend auf ihrer ISBN zu liefern. Antworte ausschließlich mit einem validen JSON-Objekt. Verwende immer die Google-Suche, um die Informationen zu finden. Wenn ich dir eine Auswahl von Antworten in einer Klammer gebe, dann verwende ausschliesslich diese für das JSON-Objekt.',
+              text: 'Du bist ein präziser Buchinformations-Assistent. Deine Aufgabe ist es, genaue Daten zu Lehrmitteln, Büchern oder Lernmaterialien basierend auf ihrer ISBN zu liefern. Antworte ausschließlich mit einem validen JSON-Objekt. Verwende immer die Google-Suche, um die Informationen zu finden. Falls ich dir in Klammer Begriffe gebe, verwende ausschließlich diese Begriffe für das JSON-Objekt.',
             }
         ],
         },
@@ -228,10 +275,18 @@ serve(async (req) => {
       publisher: bookData.Verlag || "Unbekannt",
     };
 
+    // ISBN-Bereinigungsfunktion - entfernt alle Bindestriche
+    const cleanIsbn = (isbn: string): string => {
+      return isbn ? isbn.replace(/-/g, '') : isbn;
+    };
+
     // Im Vorschaumodus nur Daten zurückgeben, nicht in DB speichern
     if (isPreviewMode) {
       console.log("Vorschaumodus aktiv – kein DB-Eintrag");
-      return new Response(JSON.stringify(formattedBookData), {
+      return new Response(JSON.stringify({
+        ...formattedBookData,
+        isbn: cleanIsbn(formattedBookData.isbn)
+      }), {
         headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
       });
     } else {
@@ -243,6 +298,8 @@ serve(async (req) => {
 
     const bookEntry = {
       ...formattedBookData,
+      // Bereinigte ISBN ohne Bindestriche verwenden
+      isbn: cleanIsbn(formattedBookData.isbn),
       user_id: userId,
       created_at: new Date().toISOString(),
       available: true,

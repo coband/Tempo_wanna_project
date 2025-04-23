@@ -22,6 +22,7 @@ export interface Book {
   publisher: string;
   embedding: any | null;
   vector_source: string | null;
+  has_pdf: boolean;
 }
 
 export type NewBook = Database["public"]["Tables"]["books"]["Insert"];

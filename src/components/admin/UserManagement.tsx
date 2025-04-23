@@ -415,7 +415,7 @@ export function UserManagement() {
                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                       <div className="overflow-hidden">
                         <CardTitle className="text-base sm:text-lg font-medium truncate">{userItem.email}</CardTitle>
-                        <CardDescription>
+                        <div className="text-sm text-muted-foreground">
                           <div className="flex flex-col xs:flex-row xs:items-center text-xs text-gray-500 mt-1 gap-1 xs:gap-0">
                             <div className="flex items-center">
                               <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
@@ -431,7 +431,7 @@ export function UserManagement() {
                               </span>
                             </div>
                           </div>
-                        </CardDescription>
+                        </div>
                       </div>
                       
                       <div className="flex gap-1 flex-wrap">
