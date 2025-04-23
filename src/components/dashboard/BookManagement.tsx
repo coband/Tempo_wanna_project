@@ -45,7 +45,6 @@ const BookManagement = ({
   // Fetch books from the database
   const fetchBooks = async (searchTerm = "") => {
     setLoading(true);
-    console.log(`Fetching books with searchTerm: "${searchTerm}"`);
     try {
       let data = null;
       let error = null;
@@ -54,7 +53,6 @@ const BookManagement = ({
       const uuidSearch = isUUID(searchTerm);
       
       if (searchTerm && uuidSearch) {
-        console.log("Searching by UUID:", searchTerm);
         // Wenn es eine UUID ist, suchen wir direkt nach der ID
         const result = await supabase
           .from("books")
@@ -63,7 +61,6 @@ const BookManagement = ({
         
         data = result.data;
         error = result.error;
-        console.log("UUID search result:", { data, error });
         
         // Setze displayQuery auf den Buchtitel, wenn ein Buch gefunden wurde
         if (data && data.length > 0) {
@@ -71,7 +68,6 @@ const BookManagement = ({
         }
       } 
       else if (searchTerm) {
-        console.log("Searching by term:", searchTerm);
         // Normaler Suchbegriff, nicht UUID
         const result = await supabase
           .from("books")
@@ -99,7 +95,6 @@ const BookManagement = ({
         return [];
       }
 
-      console.log(`Fetched ${data?.length || 0} books`);
       if (data) setAllBooks(data);
       return data || [];
     } catch (error) {
@@ -141,7 +136,6 @@ const BookManagement = ({
           table: 'books',
         },
         (payload) => {
-          console.log('Realtime change:', payload);
           // Bei Änderungen erneut laden, aber nur, wenn keine Suche aktiv ist und nicht während einer Einzelbuchansicht
           if (!currentSearchQuery && !isFiltered) {
             fetchBooks();
@@ -159,28 +153,19 @@ const BookManagement = ({
 
   // Apply search filter
   useEffect(() => {
-    console.log("Starting search filter with:", {
-      totalBooks: allBooks.length,
-      searchQuery,
-    });
-
     let result = [...allBooks];
 
     // Search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      console.log("Suche nach:", query);
       
       // Prüfe, ob es sich um eine UUID-Suche handelt
       if (isUUID(query)) {
-        console.log("ID-basierte lokale Filterung");
         // Suche direkt nach der ID
         const idMatches = result.filter(book => book.id === query);
         if (idMatches.length > 0) {
-          console.log(`ID-Suche: ${idMatches.length} Bücher gefunden für "${query}"`);
           return setFilteredBooks(idMatches);
         } else {
-          console.log("Keine Bücher mit dieser ID gefunden");
           // Wenn die ID direkt nicht gefunden wird, das Ergebnis leer lassen
           return setFilteredBooks([]);
         }
@@ -201,7 +186,6 @@ const BookManagement = ({
         });
         
         if (isbnMatches.length > 0) {
-          console.log(`ISBN-Suche: ${isbnMatches.length} Bücher gefunden für "${query}"`);
           return setFilteredBooks(isbnMatches);
         }
       }
@@ -219,15 +203,13 @@ const BookManagement = ({
         
         // Wenn wir Treffer im Verlagsfeld haben, zeige nur diese an
         if (publisherMatches.length > 0) {
-          console.log(`Gefunden: ${publisherMatches.length} Bücher vom Verlag mit "${query}"`);
           return setFilteredBooks(publisherMatches);
         }
       }
       
       // Ansonsten: Normale Suche in allen Feldern
-      // Mit zusätzlichem Logging, um zu sehen, wo genau Treffer gefunden werden
       const matchedBooks = result.filter(book => {
-        // Für Debug-Zwecke: Prüfe jedes Feld einzeln und protokolliere
+        // Für Debug-Zwecke: Prüfe jedes Feld einzeln
         let found = false;
         let matchField = "";
         
@@ -278,17 +260,12 @@ const BookManagement = ({
           matchField = "Standort: " + book.location;
         }
         
-        if (found) {
-          console.log(`Treffer für "${query}" in Buch "${book.title}": ${matchField}`);
-        }
-        
         return found;
       });
       
-      console.log(`Insgesamt ${matchedBooks.length} Bücher gefunden für: "${query}"`);
       result = matchedBooks;
     }
-
+ 
     setFilteredBooks(result);
   }, [allBooks, searchQuery]);
 

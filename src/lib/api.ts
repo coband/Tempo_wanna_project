@@ -39,15 +39,10 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
     }
 
     const data = await response.json();
-    console.log("Raw API Response:", data);
     
     if (!data) {
       throw new Error("No data returned from function");
     }
-
-    // Debugging für Buchtyp und Fach
-    console.log("API returned type:", data.type);
-    console.log("API returned subject:", data.subject);
 
     return {
       title: data.title || "",
