@@ -6,7 +6,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import type { Book } from "@/lib/books";
-import { ArrowLeft, X, ChevronLeft } from "lucide-react";
+import { ArrowLeft, X, ChevronLeft, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface BookDetailsProps {
   book: Book;
@@ -28,6 +29,7 @@ function BookDetails({
   const { toast } = useToast();
   const { user } = useAuth();
   const { supabase } = useSupabaseAuth();
+  const navigate = useNavigate();
 
   // Mobile Erkennung
   useEffect(() => {
@@ -111,6 +113,9 @@ function BookDetails({
   // Explizite Konvertierung zu Boolean für konsistente Behandlung
   const isAvailable = bookData ? Boolean(bookData.available) : Boolean(initialBook.available);
   
+  // PDF verfügbar?
+  const hasPdf = bookData ? Boolean(bookData.has_pdf) : Boolean(initialBook.has_pdf);
+  
   // Check if the current user is the one who borrowed the book
   const isBookBorrowedByCurrentUser = book.borrowed_by === user?.id;
 
@@ -184,6 +189,88 @@ function BookDetails({
     }
   };
 
+  // Handler für das Öffnen des PDF-Chats
+  const handleOpenPdfChat = async () => {
+    try {
+      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+      
+      // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
+      let { data, error } = await supabase.storage
+        .from(bucketName)
+        .list();
+      
+      if (error) {
+        throw error;
+      }
+      
+      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
+      
+      // Unterordner im Bucket finden
+      const folders = data?.filter(item => item.id === null) || [];
+      let allPdfs: { name: string, fullPath: string }[] = [];
+      
+      // PDFs im Hauptverzeichnis hinzufügen
+      let mainDirPdfs = data?.filter(file => file.name.toLowerCase().endsWith('.pdf')) || [];
+      allPdfs = mainDirPdfs.map(file => ({ name: file.name, fullPath: file.name }));
+      
+      // In jedem Unterordner suchen
+      for (const folder of folders) {
+        const { data: folderFiles, error: folderError } = await supabase.storage
+          .from(bucketName)
+          .list(folder.name);
+          
+        if (!folderError && folderFiles) {
+          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
+          
+          // PDFs aus diesem Unterordner hinzufügen
+          const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
+          allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
+            name: file.name, 
+            fullPath: `${folder.name}/${file.name}` 
+          }))];
+        }
+      }
+      
+      console.log("Alle gefundenen PDFs:", allPdfs);
+      
+      // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
+      if (allPdfs.length === 0) {
+        // Versuche direkt eine Datei mit der ISBN zu laden
+        const pdfPath = `${book.isbn}.pdf`;
+        const { data: fileData } = await supabase.storage
+          .from(bucketName)
+          .getPublicUrl(pdfPath);
+          
+        if (fileData?.publicUrl) {
+          console.log("PDF direkt gefunden:", pdfPath);
+          navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
+          return;
+        }
+        
+        throw new Error("Keine PDFs gefunden");
+      }
+      
+      // Nach PDF mit der ISBN als Präfix suchen
+      const pdfNamePattern = new RegExp(`^${book.isbn}.*\\.pdf$`, 'i');
+      const matchingPdf = allPdfs.find(file => pdfNamePattern.test(file.name));
+      
+      if (!matchingPdf) {
+        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
+      }
+      
+      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
+      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.fullPath)}`);
+      
+    } catch (error: any) {
+      console.error("Fehler beim Öffnen des PDF-Chats:", error);
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: error.message || "Das PDF konnte nicht geladen werden."
+      });
+    }
+  };
+
   const isButtonDisabled =
     isLoading || isDataLoading || (!isAvailable && !isBookBorrowedByCurrentUser);
 
@@ -198,21 +285,34 @@ function BookDetails({
           <ChevronLeft className="h-5 w-5 mr-1" />
           <span>Zurück</span>
         </button>
-        <Button
-          onClick={handleAvailabilityToggle}
-          disabled={isButtonDisabled}
-          variant={isAvailable ? "default" : "secondary"}
-          size="sm"
-        >
-          {(isLoading || isDataLoading) && (
-            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+        <div className="flex gap-2">
+          {hasPdf && (
+            <Button
+              onClick={handleOpenPdfChat}
+              variant="outline"
+              size="sm"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600"
+            >
+              <MessageCircle className="h-4 w-4 mr-1" />
+              <span>Chat mit PDF</span>
+            </Button>
           )}
-          {isAvailable
-            ? "Ausleihen"
-            : isBookBorrowedByCurrentUser
-              ? "Zurückgeben"
-              : "Ausgeliehen"}
-        </Button>
+          <Button
+            onClick={handleAvailabilityToggle}
+            disabled={isButtonDisabled}
+            variant={isAvailable ? "default" : "secondary"}
+            size="sm"
+          >
+            {(isLoading || isDataLoading) && (
+              <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+            )}
+            {isAvailable
+              ? "Ausleihen"
+              : isBookBorrowedByCurrentUser
+                ? "Zurückgeben"
+                : "Ausgeliehen"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -341,21 +441,33 @@ function BookDetails({
                 {book.level && <Badge variant="outline">{book.level}</Badge>}
                 {book.type && <Badge variant="outline" className="bg-gray-100">{book.type}</Badge>}
               </div>
-              <Button
-                onClick={handleAvailabilityToggle}
-                disabled={isButtonDisabled}
-                variant={isAvailable ? "default" : "secondary"}
-                className="ml-2"
-              >
-                {(isLoading || isDataLoading) && (
-                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+              <div className="flex gap-2">
+                {hasPdf && (
+                  <Button
+                    onClick={handleOpenPdfChat}
+                    variant="outline"
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-600"
+                  >
+                    <MessageCircle className="h-4 w-4 mr-1" />
+                    <span>Chat mit PDF</span>
+                  </Button>
                 )}
-                {isAvailable
-                  ? "Ausleihen"
-                  : isBookBorrowedByCurrentUser
-                    ? "Zurückgeben"
-                    : "Ausgeliehen"}
-              </Button>
+                <Button
+                  onClick={handleAvailabilityToggle}
+                  disabled={isButtonDisabled}
+                  variant={isAvailable ? "default" : "secondary"}
+                  className="ml-2"
+                >
+                  {(isLoading || isDataLoading) && (
+                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+                  )}
+                  {isAvailable
+                    ? "Ausleihen"
+                    : isBookBorrowedByCurrentUser
+                      ? "Zurückgeben"
+                      : "Ausgeliehen"}
+                </Button>
+              </div>
             </div>
 
             <div className="p-6 space-y-4">
