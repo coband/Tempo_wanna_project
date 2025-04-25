@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
+import { createClerkClient } from '@clerk/backend';
 
 // -----------------------------------------------------------------------------
 //  ENV‑SETUP
@@ -33,6 +34,8 @@ assertEnv('GEMINI_API_KEY');
 assertEnv('CF_ACCOUNT_ID');
 assertEnv('CF_R2_ACCESS_KEY_ID');
 assertEnv('CF_R2_SECRET_ACCESS_KEY');
+assertEnv('CLERK_SECRET_KEY');
+assertEnv('CLERK_PUBLISHABLE_KEY');
 
 // -----------------------------------------------------------------------------
 //  CONFIG
@@ -111,6 +114,12 @@ const r2Client = new S3Client({
   },
    // <-- dieser Schalter unterdrückt den automatischen HeadBucket-Ping
    sdkMiddlewareDisableHeadBucketCheck: true
+});
+
+// Clerk Client für die Authentifizierung
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
 });
 
 // -----------------------------------------------------------------------------
@@ -378,6 +387,16 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
           // Antwort extrahieren
           const responseText = response.text || "Keine Antwort erhalten";
           
+          // Datei aus der Google File API löschen, um Speicherplatz freizugeben
+          try {
+            log(`Lösche hochgeladene Datei aus der Google File API: ${fileName}`);
+            await genAI.files.delete({ name: fileName });
+            log(`Datei ${fileName} erfolgreich gelöscht`);
+          } catch (deleteError) {
+            log(`Warnung: Konnte Datei ${fileName} nicht aus der Google File API löschen: ${deleteError}`);
+            // Fehler beim Löschen sollte den Prozess nicht unterbrechen
+          }
+          
           log(`← Antwort für ${pdfPath}`);
           return responseText;
         } catch (genAiError: any) {
@@ -424,6 +443,16 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
 // -----------------------------------------------------------------------------
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Generiere eine eindeutige Request-ID für Logging
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+  // Anfrage detailliert loggen
+  log(`[PDF-API][${req.method}][${requestId}] ========== NEUE ANFRAGE (${req.method}) ==========`);
+  log(`[PDF-API][${req.method}][${requestId}] Zeitstempel: ${new Date().toISOString()}`);
+  log(`[PDF-API][${req.method}][${requestId}] URL: ${req.url}`);
+  log(`[PDF-API][${req.method}][${requestId}] Herkunft: ${req.headers.origin || "Unbekannt"}`);
+  log(`[PDF-API][${req.method}][${requestId}] User-Agent: ${req.headers["user-agent"] || "Unbekannt"}`);
+
   // Early CORS
   if (req.method === 'OPTIONS') {
     respondCors(req, res, 204);
@@ -433,6 +462,79 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     respondCors(req, res, 405);
     return res.json({ error: 'Method not allowed' });
+  }
+
+  /* ---------- Clerk Auth ---------- */
+  try {
+    // Prüfen ob ein Bearer-Token vorhanden ist
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Bearer-Token aus dem Header extrahieren
+      const token = authHeader.substring(7); // "Bearer " entfernen
+      log(`[PDF-API][POST][${requestId}] Bearer-Token gefunden, versuche Validierung...`);
+      
+      // Versuche den Token zu validieren
+      try {
+        // Prüfe den JWT direkt mit Clerk
+        // Da Clerk keine direkte verifyJwt-Methode hat, erstellen wir eine minimale Request zur Auth
+        const dummyRequest = new Request("https://api.example.com", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        
+        // Mit mehreren authorizedParties versuchen
+        // Dadurch kann der Token von verschiedenen Domains akzeptiert werden
+        const authOptions = {
+          authorizedParties: [
+            ...ALLOWED_ORIGINS,
+            "https://api.example.com",
+            "http://localhost:3000", 
+            "http://127.0.0.1:3000"
+          ]
+        };
+        
+        const authResult = await clerk.authenticateRequest(dummyRequest, authOptions);
+        
+        if (authResult.isSignedIn) {
+          log(`[PDF-API][POST][${requestId}] Token-Validierung erfolgreich, Benutzer: ${authResult.toAuth().userId}`);
+          // Token ist gültig, Anfrage fortsetzen
+        } else {
+          log(`[PDF-API][POST][${requestId}] Token ist ungültig oder kein Benutzer gefunden`);
+          respondCors(req, res, 401);
+          return res.json({ error: "Unauthorized" });
+        }
+      } catch (tokenError) {
+        // Token-Validierung fehlgeschlagen - Zugriff verweigern
+        log(`[PDF-API][POST][${requestId}] Token-Validierungsfehler: ${tokenError}`);
+        respondCors(req, res, 401);
+        return res.json({ error: "Invalid token" });
+      }
+    } else {
+      // Cookie-basierte Authentifizierung als Fallback
+      log(`[PDF-API][POST][${requestId}] Kein Bearer-Token, versuche Cookie-basierte Authentifizierung`);
+      
+      const absoluteUrl = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}${req.url}`;
+      const fetchRequest = new Request(absoluteUrl, {
+        method: req.method,
+        headers: req.headers as any,
+      });
+
+      const { isSignedIn } = await clerk.authenticateRequest(fetchRequest, {
+        authorizedParties: ALLOWED_ORIGINS,
+      });
+
+      if (!isSignedIn) {
+        log(`[PDF-API][POST][${requestId}] Nicht eingeloggt – Zugriff verweigert`);
+        respondCors(req, res, 401);
+        return res.json({ error: "Unauthorized" });
+      }
+    }
+  } catch (authError) {
+    log(`[PDF-API][POST][${requestId}] Auth-Fehler: ${authError}`);
+    respondCors(req, res, 401);
+    return res.json({ error: "Unauthorized" });
   }
 
   try {
