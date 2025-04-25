@@ -9,6 +9,7 @@ import routes from "tempo-routes";
 import { useAuth } from "./lib/auth";
 import { SignIn, SignUp } from "@clerk/clerk-react";
 import PdfChatPage from "./pages/PdfChatPage";
+import Dashboard from "./components/dashboard/Dashboard";
 
 // Komponente für die Prüfung von Admin- und Superadmin-Rechten
 const AdminRoute = ({ children, requireSuperAdmin = false }: { children: React.ReactNode, requireSuperAdmin?: boolean }) => {
@@ -63,6 +64,14 @@ function App() {
         <Route path="/sign-up/*" element={<CenteredSignUp />} />
         <Route
           path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/books"
           element={
             <ProtectedRoute>
               <BookManagement />
