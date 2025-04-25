@@ -111,9 +111,7 @@ const r2Client = new S3Client({
   credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
-  },
-   // <-- dieser Schalter unterdrückt den automatischen HeadBucket-Ping
-   sdkMiddlewareDisableHeadBucketCheck: true
+  }
 });
 
 // Clerk Client für die Authentifizierung
