@@ -8,7 +8,7 @@ import { Send, FileText, User, ChevronDown, ChevronLeft, Loader2, RefreshCw } fr
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { ScrollArea } from "../ui/scroll-area";
 import { useToast } from '../ui/use-toast';
-import { askPdfQuestion } from '@/lib/api';
+import { askPdfQuestion, fetchPdfs } from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -105,7 +105,9 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
     // Ansonsten holen wir einen neuen Token
     if (isAuthenticated) {
       try {
-        const token = await getToken({ template: 'supabase' });
+        // Standard-JWT-Template verwenden (ohne Angabe eines Templates)
+        // Dadurch wird ein einfacherer Token ausgestellt, der leichter zu validieren ist
+        const token = await getToken();
         // Speichere den Token für zukünftige Verwendung
         authTokenRef.current = token;
         return token;
@@ -124,46 +126,14 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
     
     setIsLoadingPdfs(true);
     try {
-      // API-Endpunkt für den Zugriff auf Cloudflare R2
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-      const endpoint = `${apiUrl}/api/listPdfs`;
-      
       // Auth-Token holen, wenn der Benutzer angemeldet ist
       const authToken = await fetchAuthToken();
       
-      console.log("🔍 API Aufruf an", endpoint, "mit Auth-Token:", !!authToken);
-      
-      // Headers vorbereiten
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      
-      if (authToken) {
-        headers["Authorization"] = `Bearer ${authToken}`;
-      }
-      
-      // Cache-busting Parameter für die API-Anfrage hinzufügen
-      const cacheBuster = Date.now();
-      const requestUrl = `${endpoint}?_cb=${cacheBuster}`;
-      
-      // API-Anfrage senden
-      const response = await fetch(requestUrl, {
-        method: "GET",
-        headers,
-        // Cache-Kontrolle hinzufügen
-        cache: "no-store"
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (!data || !data.files) return;
+      // Neue fetchPdfs-Funktion verwenden
+      const files = await fetchPdfs(authToken || undefined);
       
       // PDF-Dateien formatieren
-      const pdfFiles = data.files
+      const pdfFiles = files
         .filter((file: any) => file.name.toLowerCase().endsWith('.pdf'))
         .map((file: any) => {
           // Entferne die ISBN-Nummer am Anfang (Format: ISBN_Name.pdf)
