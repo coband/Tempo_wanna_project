@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
-import { LRUCache } from "lru-cache";
 
 dotenv.config();
 
@@ -32,19 +31,6 @@ const r2Client = new S3Client({
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
   },
-});
-
-/* -------------------------------------------------------------------------- */
-/*  LRU-CACHE SETUP (15 min)                                                  */
-/* -------------------------------------------------------------------------- */
-type CacheKey = string; // Prefix-basierter Cacheschlüssel
-type CacheValue = { files: any[], fetchedAt: number };
-
-const CACHE_TTL_MS = 15 * 60 * 1000; // 15 Minuten TTL (vorher 5 Minuten)
-
-const cache = new LRUCache<CacheKey, CacheValue>({
-  max: 50, // Maximal 50 verschiedene Prefix-Kombinationen
-  ttl: CACHE_TTL_MS,
 });
 
 /* -------------------------------------------------------------------------- */
@@ -106,25 +92,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   
   console.log(`[PDF-API][GET][${requestId}] Angeforderte Prefix/Path: "${prefix || 'root'}"`);
   
-  // Erzeuge einen Cache-Schlüssel basierend auf dem Prefix
-  const cacheKey = `pdfs:${prefix}`;
-  
-  // Versuche, aus dem Cache zu lesen
-  const cachedData = cache.get(cacheKey);
-  
-  if (cachedData) {
-    console.log(`[PDF-API][GET][${requestId}] CACHE-HIT! Daten aus Cache (${cachedData.files.length} Dateien)`);
-    console.log(`[PDF-API][GET][${requestId}] Cache-Alter: ${(Date.now() - cachedData.fetchedAt) / 1000} Sekunden`);
-    respondCors(req, res);
-    // Setze explizite Cache-Control-Header
-    res.setHeader("Cache-Control", "public, max-age=300");
-    console.log(`[PDF-API][GET][${requestId}] ========== ANFRAGE BEENDET (CACHE) ==========\n`);
-    return res.json({ files: cachedData.files });
-  }
-
-  /* ---------- Frischer Abruf ---------- */
+  /* ---------- Direkter Abruf von R2 ---------- */
   try {
-    console.log(`[PDF-API][GET][${requestId}] CACHE-MISS! Führe Cloudflare API-Anfrage aus...`);
+    console.log(`[PDF-API][GET][${requestId}] Führe Cloudflare API-Anfrage aus...`);
     
     const startTime = Date.now();
     const { Contents = [] } = await r2Client.send(
@@ -147,13 +117,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     console.log(`[PDF-API][GET][${requestId}] ${files.length} Dateien gefunden`);
     
-    // In Cache speichern
-    cache.set(cacheKey, { files, fetchedAt: Date.now() });
-    console.log(`[PDF-API][GET][${requestId}] Daten im Cache gespeichert (TTL: ${CACHE_TTL_MS/1000/60} Minuten)`);
-    
     respondCors(req, res);
-    // Setze explizite Cache-Control-Header
-    res.setHeader("Cache-Control", "public, max-age=300");
+    // Setze explizite Cache-Control-Header für keine Clientseitige Caching
+    res.setHeader("Cache-Control", "no-store");
     console.log(`[PDF-API][GET][${requestId}] ========== ANFRAGE BEENDET (API) ==========\n`);
     return res.json({ files });
   } catch (error: any) {

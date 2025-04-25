@@ -22,6 +22,7 @@ import {
 } from "../ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useAuth } from '@clerk/clerk-react';
+import ReactMarkdown from 'react-markdown';
 
 // Interface für eine Nachricht
 interface Message {
@@ -141,10 +142,16 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
         headers["Authorization"] = `Bearer ${authToken}`;
       }
       
+      // Cache-busting Parameter für die API-Anfrage hinzufügen
+      const cacheBuster = Date.now();
+      const requestUrl = `${endpoint}?_cb=${cacheBuster}`;
+      
       // API-Anfrage senden
-      const response = await fetch(endpoint, {
+      const response = await fetch(requestUrl, {
         method: "GET",
-        headers
+        headers,
+        // Cache-Kontrolle hinzufügen
+        cache: "no-store"
       });
       
       if (!response.ok) {
@@ -176,8 +183,12 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
       // Aktualisiere den State mit allen gefundenen PDFs
       setAvailablePdfs(pdfFiles);
       
-      // Markiere, dass initial geladen wurde
-      initialLoadDoneRef.current = true;
+      // Markiere, dass initial geladen wurde, aber nur wenn PDFs gefunden wurden
+      if (pdfFiles.length > 0) {
+        initialLoadDoneRef.current = true;
+      } else {
+        console.log("🔍 Keine PDFs gefunden, initialLoadDoneRef bleibt auf false");
+      }
     } catch (error) {
       console.error('Fehler beim Laden der PDFs:', error);
     } finally {
@@ -211,6 +222,11 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
     }
     
     console.log("🔍 Manueller Refresh ausgelöst");
+    // Cache zurücksetzen, damit alle aktuellen Dateien neu geladen werden
+    initialLoadDoneRef.current = false;
+    // State leeren, damit neu geladen wird
+    setAvailablePdfs([]);
+    // PDFs neu laden
     await loadPdfs();
   }, [isLoadingPdfs]);
   
@@ -350,19 +366,76 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
   }, [messages]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollAreaRef.current) {
+      // Direkt zum Ende scrollen mit dem nativen overflow
+      setTimeout(() => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+        }
+      }, 100);
+    } else {
+      // Fallback
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   };
+
+  // Auto-scroll bei neuen Nachrichten
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(scrollToBottom, 150);
+    }
+  }, [messages]);
+
+  // Auto-scroll wenn Laden beendet ist
+  useEffect(() => {
+    if (!isLoading && messages.length > 0) {
+      setTimeout(scrollToBottom, 200);
+    }
+  }, [isLoading]);
+
+  // Scroll zum Ende wenn neue Nachricht hinzukommt
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollToBottom();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [messages.length]);
+
+  // Scroll zum Ende bei Fenstergrößenänderung
+  useEffect(() => {
+    const handleResize = () => {
+      if (messages.length > 0) {
+        scrollToBottom();
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [messages.length]);
 
   // Suche nach pendingPdf, wenn alle PDFs geladen sind
   useEffect(() => {
     if (pendingPdf && availablePdfs.length > 0) {
       console.log("Suche nach pendingPdf:", pendingPdf);
-      const matchingPdf = availablePdfs.find(pdf => pdf.path === pendingPdf);
+      
+      // Überprüfen, ob es eine direkte Übereinstimmung gibt
+      let matchingPdf = availablePdfs.find(pdf => pdf.path === pendingPdf);
+      
+      // Wenn keine direkte Übereinstimmung, prüfe, ob das pendingPdf eine ISBN ist
+      // und finde eine Datei, die mit dieser ISBN beginnt
+      if (!matchingPdf && pendingPdf.match(/^\d+\.pdf$/)) {
+        // Extrahiere die ISBN aus pendingPdf (entferne .pdf)
+        const isbn = pendingPdf.replace('.pdf', '');
+        console.log("Suche nach ISBN:", isbn);
+        
+        // Finde ein PDF, das mit der ISBN beginnt
+        matchingPdf = availablePdfs.find(pdf => pdf.path.startsWith(isbn));
+      }
       
       if (matchingPdf) {
         console.log("PDF gefunden:", matchingPdf);
         // Das PDF wurde gefunden, wähle es aus
-        setSelectedPdf(pendingPdf);
+        setSelectedPdf(matchingPdf.path); // Verwende den vollständigen Pfad
         setSelectedPdfName(matchingPdf.name);
         
         // Begrüßungsnachricht hinzufügen
@@ -376,11 +449,23 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
         setPendingPdf(undefined);
       } else {
         console.warn(`PDF "${pendingPdf}" wurde nicht im Bucket gefunden`);
-        toast({
-          variant: "default",
-          title: "PDF nicht gefunden",
-          description: `Das PDF "${pendingPdf}" konnte nicht gefunden werden.`
-        });
+        
+        // Falls das pendingPdf eine ISBN ist, gib eine konkretere Fehlermeldung aus
+        if (pendingPdf.match(/^\d+\.pdf$/)) {
+          const isbn = pendingPdf.replace('.pdf', '');
+          console.log("Verfügbare PDF-Pfade:", availablePdfs.map(pdf => pdf.path));
+          toast({
+            variant: "default",
+            title: "PDF nicht gefunden",
+            description: `Kein PDF mit ISBN ${isbn} konnte gefunden werden.`
+          });
+        } else {
+          toast({
+            variant: "default",
+            title: "PDF nicht gefunden",
+            description: `Das PDF "${pendingPdf}" konnte nicht gefunden werden.`
+          });
+        }
       }
     }
   }, [availablePdfs, pendingPdf, toast]);
@@ -534,14 +619,15 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
   
   // Nachrichtenkomponente
   const MessageItem = ({ message }: { message: Message }) => (
-    <div className={`mb-4 flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className={`flex max-w-[90%] items-start gap-2 ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-        <Avatar className={`mt-1 ${message.type === 'user' ? 'bg-primary' : 'bg-muted'}`}>
+    <div className="mb-4 last:mb-8">
+      <div className="flex items-start gap-3 w-full">
+        <Avatar className="h-8 w-8 shrink-0">
+          <AvatarImage src="" />
           <AvatarFallback>
             {message.type === 'user' ? <User className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
           </AvatarFallback>
         </Avatar>
-        <div className={`rounded-lg p-3 text-sm ${
+        <div className={`rounded-lg p-3 text-sm w-full ${
           message.type === 'user' 
             ? 'bg-primary text-primary-foreground' 
             : 'bg-muted text-foreground'
@@ -555,8 +641,10 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
               </React.Fragment>
             ))
           ) : (
-            // Für Assistenten-Antworten den HTML-Inhalt rendern
-            <div dangerouslySetInnerHTML={{ __html: message.content }} />
+            // Formatierte Anzeige der Assistenten-Antwort mit react-markdown
+            <div className="prose dark:prose-invert max-w-none w-full">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
           )}
         </div>
       </div>
@@ -648,109 +736,104 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
   );
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      <DialogContent 
-        className={`p-0 gap-0 ${fullScreen ? 'w-screen h-screen max-w-none max-h-none rounded-none' : 'max-w-3xl w-[90vw] max-h-[90vh] h-[600px]'}`}
-      >
-        {isMobile && <MobileHeader />}
-        
-        <div className="flex h-full">
-          {/* Linke Spalte: Chat-Verlauf (nur auf Desktop oder wenn geöffnet auf Mobil) */}
-          {(!isMobile || showChatHistory) && (
-            <div className={`${isMobile ? 'w-full absolute inset-0 bg-background z-10' : 'w-1/4'}`}>
-              {isMobile && (
-                <div className="flex items-center justify-between p-3 border-b">
-                  <h3 className="font-semibold">Chat-Verlauf</h3>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={() => setShowChatHistory(false)}
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                </div>
-              )}
-              <ChatHistoryPanel />
+    <div className="flex h-full w-full overflow-hidden">
+      {/* Linke Spalte: Chat-Verlauf (nur auf Desktop oder wenn geöffnet auf Mobil) */}
+      {(!isMobile || showChatHistory) && (
+        <div className={`${isMobile ? 'w-full absolute inset-0 bg-background z-10' : 'w-1/4 h-full'} border-r`}>
+          {isMobile && (
+            <div className="flex items-center justify-between p-3 border-b">
+              <h3 className="font-semibold">Chat-Verlauf</h3>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setShowChatHistory(false)}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
             </div>
           )}
-          
-          {/* Rechte Spalte: Aktueller Chat */}
-          <div className={`flex flex-col ${(!isMobile || !showChatHistory) ? 'block' : 'hidden'} ${isMobile ? 'w-full' : 'w-3/4'}`}>
-            {!isMobile && (
-              <DialogHeader className="px-4 py-2 border-b text-left">
-                <DialogTitle>PDF Chat</DialogTitle>
-              </DialogHeader>
-            )}
-            
-            {/* PDF-Selector */}
-            <PdfSelector />
-            
-            {/* Chat-Bereich */}
-            <div className="flex-1 overflow-hidden">
-              {selectedPdf ? (
-                <div className="flex flex-col h-full">
-                  {/* Nachrichten-Bereich */}
-                  <ScrollArea 
-                    ref={scrollAreaRef} 
-                    className="flex-1"
-                  >
-                    <div className="p-4">
-                      {messages.map((message, index) => (
-                        <MessageItem key={index} message={message} />
-                      ))}
-                      {isLoading && (
-                        <div className="flex justify-start mb-4">
-                          <div className="bg-muted rounded-lg p-3 flex items-center">
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            <span className="text-sm">Denke nach...</span>
-                          </div>
-                        </div>
-                      )}
-                      <div ref={messagesEndRef} />
+          <ChatHistoryPanel />
+        </div>
+      )}
+      
+      {/* Rechte Spalte: Aktueller Chat */}
+      <div 
+        className={`${(!isMobile || !showChatHistory) ? 'flex' : 'hidden'} ${isMobile ? 'w-full' : 'w-3/4'} 
+        flex-col h-full overflow-hidden`}
+      >
+        {!isMobile && (
+          <div className="px-4 py-2 border-b">
+            <h2 className="font-semibold">PDF Chat</h2>
+          </div>
+        )}
+        
+        {/* PDF-Selector */}
+        <PdfSelector />
+        
+        {/* Chat-Bereich mit einfachen Höhenberechnungen */}
+        {selectedPdf ? (
+          <div className="flex flex-col flex-grow overflow-hidden" style={{ height: 'calc(100% - 70px)' }}>
+            {/* Nachrichten-Container mit festem Overflow */}
+            <div 
+              className="flex-1 overflow-y-auto p-4 h-full" 
+              ref={scrollAreaRef}
+              style={{ 
+                overflowY: 'auto'
+              }}
+            >
+              <div className="flex flex-col min-h-full">
+                <div className="flex-1">
+                  {messages.map((message, index) => (
+                    <MessageItem key={index} message={message} />
+                  ))}
+                  {isLoading && (
+                    <div className="flex justify-start mb-4">
+                      <div className="bg-muted rounded-lg p-3 flex items-center">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        <span className="text-sm">Denke nach...</span>
+                      </div>
                     </div>
-                  </ScrollArea>
-                  
-                  {/* Eingabebereich */}
-                  <div className="p-4 border-t">
-                    <div className="flex gap-2">
-                      <Input
-                        ref={inputRef}
-                        value={inputValue}
-                        onChange={handleInputChange}
-                        onKeyDown={handleKeyPress}
-                        placeholder="Frage zu diesem PDF stellen..."
-                        disabled={isLoading}
-                        className="flex-1"
-                      />
-                      <Button 
-                        onClick={sendQuestion} 
-                        disabled={!inputValue.trim() || isLoading}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Send className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                  <FileText className="h-12 w-12 mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-medium mb-2">Bitte ein PDF auswählen</h3>
-                  <p className="text-sm text-muted-foreground max-w-md">
-                    Wählen Sie ein PDF aus der Liste oben, um Fragen dazu zu stellen.
-                  </p>
-                </div>
-              )}
+                <div ref={messagesEndRef} className="h-4" />
+              </div>
+            </div>
+            
+            {/* Eingabebereich mit fester Höhe */}
+            <div className="h-[70px] min-h-[70px] p-4 border-t flex items-center">
+              <div className="flex gap-2 w-full">
+                <Input
+                  ref={inputRef}
+                  value={inputValue}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Frage zu diesem PDF stellen..."
+                  disabled={isLoading}
+                  className="flex-1"
+                />
+                <Button 
+                  onClick={sendQuestion} 
+                  disabled={!inputValue.trim() || isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+            <FileText className="h-12 w-12 mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-medium mb-2">Bitte ein PDF auswählen</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Wählen Sie ein PDF aus der Liste oben, um Fragen dazu zu stellen.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   );
-} 
+}

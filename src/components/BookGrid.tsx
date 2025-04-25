@@ -282,8 +282,8 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     try {
       const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
       
-      // PDFs im Bucket auflisten
-      const { data, error } = await supabase.storage
+      // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
+      let { data, error } = await supabase.storage
         .from(bucketName)
         .list();
       
@@ -291,20 +291,63 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         throw error;
       }
       
-      if (!data || data.length === 0) {
+      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
+      
+      // Unterordner im Bucket finden
+      const folders = data?.filter(item => item.id === null) || [];
+      let allPdfs: { name: string, fullPath: string }[] = [];
+      
+      // PDFs im Hauptverzeichnis hinzufügen
+      let mainDirPdfs = data?.filter(file => file.name.toLowerCase().endsWith('.pdf')) || [];
+      allPdfs = mainDirPdfs.map(file => ({ name: file.name, fullPath: file.name }));
+      
+      // In jedem Unterordner suchen
+      for (const folder of folders) {
+        const { data: folderFiles, error: folderError } = await supabase.storage
+          .from(bucketName)
+          .list(folder.name);
+          
+        if (!folderError && folderFiles) {
+          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
+          
+          // PDFs aus diesem Unterordner hinzufügen
+          const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
+          allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
+            name: file.name, 
+            fullPath: `${folder.name}/${file.name}` 
+          }))];
+        }
+      }
+      
+      console.log("Alle gefundenen PDFs:", allPdfs);
+      
+      // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
+      if (allPdfs.length === 0) {
+        // Versuche direkt eine Datei mit der ISBN zu laden
+        const pdfPath = `${book.isbn}.pdf`;
+        const { data: fileData } = await supabase.storage
+          .from(bucketName)
+          .getPublicUrl(pdfPath);
+          
+        if (fileData?.publicUrl) {
+          console.log("PDF direkt gefunden:", pdfPath);
+          navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
+          return;
+        }
+        
         throw new Error("Keine PDFs gefunden");
       }
       
       // Nach PDF mit der ISBN als Präfix suchen
-      const pdfNamePattern = new RegExp(`^${book.isbn}_.*\\.pdf$`, 'i');
-      const matchingPdf = data.find(file => pdfNamePattern.test(file.name));
+      const pdfNamePattern = new RegExp(`^${book.isbn}.*\\.pdf$`, 'i');
+      const matchingPdf = allPdfs.find(file => pdfNamePattern.test(file.name));
       
       if (!matchingPdf) {
         throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
       }
       
       // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
-      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.name)}`);
+      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.fullPath)}`);
       
     } catch (error: any) {
       console.error("Fehler beim Öffnen des PDF-Chats:", error);
