@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Skeleton } from '../ui/skeleton';
-import { Send, Book as BookIcon, User, X, Eye, Clock, ChevronDown, ChevronLeft, Loader2, Search } from 'lucide-react';
+import { Send, Book as BookIcon, User, X, Eye, Clock, ChevronDown, ChevronLeft, Loader2, Search, MessageCircle } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
 import { ScrollArea } from "../ui/scroll-area";
 import BookDetails from "./BookDetails";
@@ -26,6 +26,13 @@ import {
   CollapsibleTrigger,
 } from "../ui/collapsible";
 import { useAuth as useClerkAuth } from "@clerk/clerk-react";
+import {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "../ui/tooltip";
+import { useNavigate } from 'react-router-dom';
 
 // Interface für Suchergebnisse, die von der Supabase-Funktion zurückgegeben werden
 interface SearchBook {
@@ -37,6 +44,8 @@ interface SearchBook {
   description: string;
   similarity: number;
   available?: boolean; // Status der Verfügbarkeit
+  has_pdf?: boolean;   // Flag, ob ein PDF vorhanden ist
+  isbn?: string;       // ISBN des Buches für PDF-Zugriff
 }
 
 interface Message {
@@ -91,6 +100,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
   // Authentifizierten Supabase-Client vom Hook beziehen
   const { supabase, publicClient } = useSupabaseAuth();
   const clerkAuth = useClerkAuth();
+  const navigate = useNavigate();
   
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -266,17 +276,75 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       }
       
       if (data && Array.isArray(data) && data.length > 0) {
+        // Debug-Information: Rückgabedaten der API
+        console.log("DEBUG - Rohe Bücherdaten von API:", data);
+        console.log("DEBUG - Buch-Attribute:", data.map(book => ({
+          id: book.id,
+          title: book.title,
+          has_pdf: book.has_pdf,
+          has_pdf_type: typeof book.has_pdf
+        })));
+        
+        // Überprüfe für jedes Buch, ob es ein PDF mit passender ISBN gibt
+        const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+        
+        // PDFs im Bucket abrufen
+        let pdfList: string[] = [];
+        try {
+          const { data: pdfData } = await supabase.storage
+            .from(bucketName)
+            .list();
+          
+          if (pdfData) {
+            // Nur PDF-Dateien filtern
+            pdfList = pdfData
+              .filter(file => file.name.toLowerCase().endsWith('.pdf'))
+              .map(file => file.name);
+            
+            console.log("Verfügbare PDFs:", pdfList);
+          }
+        } catch (error) {
+          console.error("Fehler beim Abrufen der PDFs:", error);
+        }
+        
+        // Bücher mit PDF-Flag versehen
+        const booksWithPdfFlag = data.map(book => {
+          // Prüfe zuerst, ob das Buch bereits ein has_pdf-Attribut aus der Datenbank hat
+          if (book.has_pdf !== undefined) {
+            console.log(`Buch ${book.title} (ISBN: ${book.isbn}): Behalte vorhandenes has_pdf=${book.has_pdf} (Typ: ${typeof book.has_pdf})`);
+            // Konvertierung zu Boolean für konsistente Handhabung
+            return {
+              ...book,
+              has_pdf: Boolean(book.has_pdf)
+            };
+          }
+          
+          // Falls nicht, prüfe, ob ein PDF mit der ISBN existiert (exakt oder als Präfix)
+          const exactMatch = pdfList.includes(`${book.isbn}.pdf`);
+          const prefixMatch = pdfList.some(pdf => pdf.startsWith(book.isbn));
+          const hasPdf = exactMatch || prefixMatch;
+          
+          console.log(`Buch ${book.title} (ISBN: ${book.isbn}): has_pdf=${hasPdf}, exactMatch=${exactMatch}, prefixMatch=${prefixMatch}`);
+          
+          return {
+            ...book,
+            has_pdf: hasPdf
+          };
+        });
+        
+        console.log("Bücher mit PDF-Flag:", booksWithPdfFlag);
+        
         // Speichere Suchsitzung
         const sessionId = `session_${Date.now()}`;
         const session: SearchSession = {
           id: sessionId,
           query: searchQuery,
           timestamp: new Date(),
-          books: data
+          books: booksWithPdfFlag
         };
         
         setCurrentSessionId(sessionId);
-        setBooks(data);
+        setBooks(booksWithPdfFlag);
         setShowResults(true);
         saveSearchHistory(session);
       } else {
@@ -346,15 +414,29 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         throw error;
       }
       
-      console.log("Geladene Buchdaten aus DB:", bookData);
+      // Typumwandlung zu Book, da wir wissen, dass es ein Buch ist
+      const typedBookData = bookData as unknown as Book;
+      
+      console.log("Geladene Buchdaten aus DB:", typedBookData);
+      console.log("DEBUG - hat das Buch has_pdf in der DB?", {
+        has_pdf: typedBookData.has_pdf,
+        has_pdf_type: typeof typedBookData.has_pdf,
+        has_pdf_value: Boolean(typedBookData.has_pdf),
+        originalSearchBook: {
+          has_pdf: searchBook.has_pdf,
+          has_pdf_type: typeof searchBook.has_pdf
+        }
+      });
       
       // Stellen Sie sicher, dass alle benötigten Eigenschaften in bookData enthalten sind
       const completeBookData = {
-        ...bookData,
-        id: bookData.id || searchBook.id,
-        title: bookData.title || searchBook.title,
-        author: bookData.author || searchBook.author,
-        available: typeof bookData.available !== 'undefined' ? bookData.available : true
+        ...typedBookData,
+        id: typedBookData.id || searchBook.id,
+        title: typedBookData.title || searchBook.title,
+        author: typedBookData.author || searchBook.author,
+        available: typeof typedBookData.available !== 'undefined' ? typedBookData.available : true,
+        // Behalten Sie den has_pdf-Wert aus den DB-Daten bei, anstatt ihn zu überschreiben
+        has_pdf: typeof typedBookData.has_pdf !== 'undefined' ? typedBookData.has_pdf : searchBook.has_pdf
       };
       
       console.log("Vollständige Buchdaten für Details:", completeBookData);
@@ -394,6 +476,92 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       });
     } finally {
       setIsLoadingBookDetails(false);
+    }
+  };
+
+  // Funktion zum Öffnen des PDF-Chats mit dem Buch
+  const openPdfChat = async (book: SearchBook) => {
+    try {
+      // Transition-Effekt starten
+      setIsTransitioning(true);
+      
+      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+      
+      // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
+      let { data, error } = await supabase.storage
+        .from(bucketName)
+        .list();
+      
+      if (error) {
+        throw error;
+      }
+      
+      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
+      
+      // Unterordner im Bucket finden
+      const folders = data?.filter(item => item.id === null) || [];
+      let allPdfs: { name: string, fullPath: string }[] = [];
+      
+      // PDFs im Hauptverzeichnis hinzufügen
+      let mainDirPdfs = data?.filter(file => file.name.toLowerCase().endsWith('.pdf')) || [];
+      allPdfs = mainDirPdfs.map(file => ({ name: file.name, fullPath: file.name }));
+      
+      // In jedem Unterordner suchen
+      for (const folder of folders) {
+        const { data: folderFiles, error: folderError } = await supabase.storage
+          .from(bucketName)
+          .list(folder.name);
+          
+        if (!folderError && folderFiles) {
+          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
+          
+          // PDFs aus diesem Unterordner hinzufügen
+          const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
+          allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
+            name: file.name, 
+            fullPath: `${folder.name}/${file.name}` 
+          }))];
+        }
+      }
+      
+      console.log("Alle gefundenen PDFs:", allPdfs);
+      
+      // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
+      if (allPdfs.length === 0) {
+        // Versuche direkt eine Datei mit der ISBN zu laden
+        const pdfPath = `${book.isbn}.pdf`;
+        const { data: fileData } = await supabase.storage
+          .from(bucketName)
+          .getPublicUrl(pdfPath);
+          
+        if (fileData?.publicUrl) {
+          console.log("PDF direkt gefunden:", pdfPath);
+          navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
+          return;
+        }
+        
+        throw new Error("Keine PDFs gefunden");
+      }
+      
+      // Nach PDF mit der ISBN als Präfix suchen
+      const pdfNamePattern = new RegExp(`^${book.isbn}.*\\.pdf$`, 'i');
+      const matchingPdf = allPdfs.find(file => pdfNamePattern.test(file.name));
+      
+      if (!matchingPdf) {
+        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
+      }
+      
+      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
+      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.fullPath)}`);
+      
+    } catch (error: any) {
+      console.error("Fehler beim Öffnen des PDF-Chats:", error);
+      setIsTransitioning(false);
+      toast({
+        variant: "destructive",
+        title: "Fehler",
+        description: error.message || "Das PDF konnte nicht geladen werden."
+      });
     }
   };
 
@@ -549,31 +717,54 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                   {!isLoading && showResults && books.length > 0 && (
                     <div className="py-3 pb-4">
                       <div className="grid grid-cols-1 gap-4">
-                        {books.map((book) => (
+                        {books.map((book) => {
+                          console.log(`Rendering book ${book.title}: has_pdf=${book.has_pdf}`);
+                          return (
                           <Card 
                             key={book.id} 
-                            className={`overflow-hidden border-l-4 ${book.available === false ? 'border-l-red-400' : 'border-l-green-400'}`}
+                            className="hover:shadow-lg transition-shadow"
                           >
                             <CardContent className="p-4">
                               <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-semibold">{book.title}</h4>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={(event) => {
-                                    // Event-Stopper hinzufügen, um Event-Bubbling zu verhindern
-                                    // und dann die Details öffnen
-                                    event.stopPropagation();
-                                    openBookDetails(book);
-                                  }}
-                                  disabled={isLoadingBookDetails}
-                                  className="h-8 px-2 ml-2"
-                                >
-                                  <Eye className="h-3 w-3 mr-1" />
-                                  <span className="text-xs">Details</span>
-                                </Button>
+                                <h3 className="font-semibold text-lg">{book.title}</h3>
+                                <div className="flex items-center gap-1">
+                                  {book.has_pdf && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6 p-0 ml-1 shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openPdfChat(book);
+                                            }}
+                                          >
+                                            <MessageCircle className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Chat mit PDF</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openBookDetails(book);
+                                    }}
+                                    disabled={isLoadingBookDetails}
+                                  >
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    <span className="text-xs">Details</span>
+                                  </Button>
+                                </div>
                               </div>
-                              <p className="text-sm text-gray-600 mb-2">{book.author}</p>
+                              <p className="text-sm text-gray-600 mb-3">{book.author}</p>
                               
                               <div className="flex items-center gap-2 mb-3 flex-wrap">
                                 <Badge variant="outline">{book.subject}</Badge>
@@ -587,10 +778,10 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                               </div>
                               
                               <p className="text-sm text-gray-700 line-clamp-3">{book.description}</p>
-                              
                             </CardContent>
                           </Card>
-                        ))}
+                          );
+                        })}
                       </div>
                       <div ref={messagesEndRef} className="h-2" />
                     </div>
@@ -691,7 +882,9 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                     <div className="mb-4">
                       <h3 className="text-lg font-medium mb-3">Gefundene Bücher ({books.length}):</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2">
-                        {books.map((book) => (
+                        {books.map((book) => {
+                          console.log(`Rendering book in desktop view ${book.title}: has_pdf=${book.has_pdf}`);
+                          return (
                           <Card 
                             key={book.id} 
                             className={`overflow-hidden border-l-4 ${book.available === false ? 'border-l-red-400' : 'border-l-green-400'}`}
@@ -699,20 +892,42 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                             <CardContent className="p-4">
                               <div className="flex justify-between items-start mb-2">
                                 <h4 className="font-semibold text-md">{book.title}</h4>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={(event) => {
-                                    // Event-Stopper hinzufügen, um Event-Bubbling zu verhindern
-                                    // und dann die Details öffnen
-                                    event.stopPropagation();
-                                    openBookDetails(book);
-                                  }}
-                                  disabled={isLoadingBookDetails}
-                                >
-                                  <Eye className="h-3 w-3 mr-1" />
-                                  <span className="text-xs">Details</span>
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                  {book.has_pdf && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-6 w-6 p-0 ml-1 shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              openPdfChat(book);
+                                            }}
+                                          >
+                                            <MessageCircle className="h-3.5 w-3.5" />
+                                          </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Chat mit PDF</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openBookDetails(book);
+                                    }}
+                                    disabled={isLoadingBookDetails}
+                                  >
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    <span className="text-xs">Details</span>
+                                  </Button>
+                                </div>
                               </div>
                               <p className="text-sm text-gray-600 mb-2">{book.author}</p>
                               
@@ -731,7 +946,8 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                               
                             </CardContent>
                           </Card>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
