@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { Camera, ChevronDown, X, ChevronLeft, Check } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import type { Book, NewBook } from "@/lib/books";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { fetchBookInfo } from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,7 +40,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
-import React from "react";
 import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS } from "@/lib/constants";
 
 interface BookFormProps {
@@ -70,16 +69,8 @@ export function BookForm({
   // Gemeinsame Stile für Input-Elemente, um das automatische Zoomen zu verhindern
   const inputStyles = { fontSize: "16px", touchAction: "manipulation" };
 
-  // Angepasste Liste der verfügbaren Stufen
-  const availableLevels = [
-    "Kindergarten",
-    "1. Klasse", 
-    "2. Klasse", 
-    "3. Klasse", 
-    "4. Klasse", 
-    "5. Klasse", 
-    "6. Klasse"
-  ];
+  // Liste der verfügbaren Stufen aus den globalen Konstanten
+  const availableLevels = LEVELS;
 
   // Zyklus-Definitionen
   const cycleOptions = [
@@ -110,7 +101,7 @@ export function BookForm({
     });
   
   // Referenz für die Dialog-Inhalts-Komponente
-  const dialogContentRef = React.useRef<HTMLDivElement>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
   
   // Funktion zum Fokussieren des Dialogs, um Schärfe zu erhalten
   const ensureDialogSharpness = () => {

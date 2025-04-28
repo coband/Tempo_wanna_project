@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -98,7 +98,7 @@ const loadSearchHistory = (): SearchSession | null => {
 
 export function BookChat({ open, onOpenChange }: BookChatProps) {
   // Authentifizierten Supabase-Client vom Hook beziehen
-  const { supabase, publicClient } = useSupabaseAuth();
+  const { supabase } = useSupabase();
   const clerkAuth = useClerkAuth();
   const navigate = useNavigate();
   
@@ -264,7 +264,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         data = result.books || [];
       } else {
         // Alternativ: Supabase Functions API nutzen
-        const { data: result, error } = await publicClient.functions.invoke('search-books', {
+        const { data: result, error } = await supabase.functions.invoke('search-books', {
           body: { query: searchQuery }
         });
         
@@ -401,7 +401,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       }
       
       // Bestimme, welchen Client wir verwenden
-      const client = authToken ? supabase : publicClient;
+      const client = authToken ? supabase : supabase;
       
       // Lade vollständige Buchinformationen
       const { data: bookData, error } = await client

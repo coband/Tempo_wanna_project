@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/lib/auth';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useAuth } from '@/hooks/useAuth';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { 
   User,
 } from '@/lib/user-management';
@@ -53,7 +53,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export function UserManagement() {
   const { user, isAdmin, isSuperAdmin } = useAuth();
-  const { supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
   const [users, setUsers] = useState<User[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);

@@ -4,7 +4,8 @@ import BookGrid from "../BookGrid";
 import { DashboardHeader } from "./DashboardHeader";
 import type { Book } from "@/lib/books";
 import { ChatButton } from "../books/ChatButton";
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useSupabase } from '@/contexts/SupabaseContext';
+import { useAuth } from '@/hooks/useAuth';
 import { X } from "lucide-react";
 import { toast } from "react-hot-toast";
 import LoadingScreen from "../LoadingScreen";
@@ -23,7 +24,8 @@ const API_ENDPOINT = import.meta.env.VITE_SUPABASE_URL
 const BookManagement = ({
   initialSearchQuery = "",
 }: BookManagementProps) => {
-  const { supabase, loading: clientLoading, handleRequest } = useSupabaseAuth();
+  const supabase = useSupabase();
+  const { loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [displayQuery, setDisplayQuery] = useState(initialSearchQuery);
   const [allBooks, setAllBooks] = useState<Book[]>([]);
@@ -40,6 +42,18 @@ const BookManagement = ({
   // Hilfsfunktion zur Prüfung, ob ein String eine UUID ist
   const isUUID = (str: string): boolean => {
     return !!str.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  };
+
+  // Helper-Funktion für Anfragen mit Fehlerbehandlung
+  const handleRequest = async <T,>(
+    requestFn: () => Promise<{ data: T | null; error: any }>
+  ): Promise<{ data: T | null; error: any }> => {
+    try {
+      return await requestFn();
+    } catch (error) {
+      console.error("Fehler bei der Anfrage:", error);
+      return { data: null, error };
+    }
   };
 
   // Fetch books from the database
@@ -108,7 +122,7 @@ const BookManagement = ({
 
   // Füge diese Realtime-Verbindung hinzu, um bei Änderungen automatisch zu aktualisieren
   useEffect(() => {
-    if (clientLoading) return;
+    if (authLoading) return;
     
     // Eine Referenz auf den aktuellen Suchzustand für den Closure
     const currentSearchQuery = searchQuery;
@@ -125,31 +139,11 @@ const BookManagement = ({
       }, currentSearchQuery ? 300 : 0); // Verzögerung nur bei Suchbegriffen
     }
     
-    // Echtzeit-Abonnement für Änderungen an Büchern
-    const channel = supabase
-      .channel('bookChanges')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'books',
-        },
-        (payload) => {
-          // Bei Änderungen erneut laden, aber nur, wenn keine Suche aktiv ist und nicht während einer Einzelbuchansicht
-          if (!currentSearchQuery && !isFiltered) {
-            fetchBooks();
-          }
-        }
-      )
-      .subscribe();
-    
     return () => {
       // Aufräumen
       clearTimeout(debounceTimer);
-      supabase.removeChannel(channel);
     };
-  }, [searchQuery, supabase, clientLoading, isFiltered]);
+  }, [searchQuery, authLoading]);
 
   // Apply search filter
   useEffect(() => {

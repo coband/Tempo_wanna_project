@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import BookDetails from "./books/BookDetails.tsx";
 import { Badge } from "./ui/badge";
 import {
@@ -12,7 +12,7 @@ import {
 import { Button } from "./ui/button";
 import { BookForm } from "./books/BookForm";
 import { Book, NewBook, BookUpdate } from "@/lib/books";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useToast } from "./ui/use-toast";
 import { BookFilter } from "./books/BookFilter";
 import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS, LOCATIONS, YEAR_RANGE } from "@/lib/constants";
@@ -46,7 +46,7 @@ interface FilterValues {
 
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
-  const { supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
   const navigate = useNavigate();
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);

@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { useAuth } from "@/lib/auth";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { useAuth } from "@/hooks/useAuth";
+import { useSupabase } from '@/contexts/SupabaseContext';
 import type { Book } from "@/lib/books";
 import { ArrowLeft, X, ChevronLeft, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -28,7 +28,7 @@ function BookDetails({
   const [isMobile, setIsMobile] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
-  const { supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
   const navigate = useNavigate();
 
   // Mobile Erkennung

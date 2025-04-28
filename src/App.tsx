@@ -6,7 +6,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserManagement } from "./components/admin/UserManagement";
 import BulkImportBooks from "./components/admin/BulkImportBooks";
 import routes from "tempo-routes";
-import { useAuth } from "./lib/auth";
+import { useAuth } from "./hooks/useAuth";
 import { SignIn, SignUp } from "@clerk/clerk-react";
 import PdfChatPage from "./pages/PdfChatPage";
 import Dashboard from "./components/dashboard/Dashboard";
@@ -54,9 +54,6 @@ const CenteredSignUp = () => {
 function App() {
   return (
     <Suspense fallback={<p>Loading...</p>}>
-      {/* Tempo routes */}
-      {import.meta.env.VITE_TEMPO && useRoutes(routes)}
-
       <Routes>
         <Route path="/" element={<Home />} />
         {/* Clerk Auth Routen mit zentrierten Komponenten */}
@@ -97,8 +94,6 @@ function App() {
             </AdminRoute>
           }
         />
-        {/* Add this before any catchall route */}
-        {import.meta.env.VITE_TEMPO && <Route path="/tempobook/*" />}
       </Routes>
     </Suspense>
   );

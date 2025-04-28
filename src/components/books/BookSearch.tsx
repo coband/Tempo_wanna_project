@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -27,6 +27,7 @@ interface Book {
 }
 
 export function BookSearch() {
+  const supabase = useSupabase(); // Authentifizierten Client aus dem Hook verwenden
   const [query, setQuery] = useState('');
   const [books, setBooks] = useState<Book[]>([]);
   const [isLoading, setIsLoading] = useState(false);

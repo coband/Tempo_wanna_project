@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { LogOut, Users, BookOpen, Upload, Menu, X, FileText } from "lucide-react";
 import { UserButton } from "@clerk/clerk-react";

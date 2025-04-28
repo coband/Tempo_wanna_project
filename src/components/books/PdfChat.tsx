@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, createContext, useContext, useCallback } from 'react';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -88,7 +87,6 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
   const [availablePdfs, setAvailablePdfs] = useState<PdfFile[]>([]);
   const [isLoadingPdfs, setIsLoadingPdfs] = useState(false);
   const { getToken } = useAuth();
-  const { isAuthenticated } = useSupabaseAuth();
   
   // Speichere den Auth-Token in einer Ref für die Wiederverwendung
   const authTokenRef = useRef<string | null>(null);
@@ -103,30 +101,16 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
     }
     
     // Ansonsten holen wir einen neuen Token
-    if (isAuthenticated) {
-      try {
-        // Standard-JWT-Template verwenden (ohne Angabe eines Templates)
-        // Dadurch wird ein einfacherer Token ausgestellt, der leichter zu validieren ist
-        const token = await getToken();
-        // Speichere den Token für zukünftige Verwendung
-        authTokenRef.current = token;
-        return token;
-      } catch (error) {
-        console.error('Fehler beim Abrufen des Auth-Tokens:', error);
-        return null;
-      }
-    }
-    return null;
+    const token = await getToken();
+    // Speichere den Token für zukünftige Verwendung
+    authTokenRef.current = token;
+    return token;
   };
   
   const loadPdfs = async () => {
-    if (!isAuthenticated) return;
-    
-    console.log("🔍 loadPdfs ausgeführt", new Date().toISOString(), "Authentifizierter Benutzer:", !!isAuthenticated, "Initial Load Done:", initialLoadDoneRef.current);
-    
     setIsLoadingPdfs(true);
     try {
-      // Auth-Token holen, wenn der Benutzer angemeldet ist
+      // Auth-Token holen
       const authToken = await fetchAuthToken();
       
       // Neue fetchPdfs-Funktion verwenden
@@ -168,21 +152,17 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
   
   // Beim ersten Laden PDFs abrufen
   useEffect(() => {
-    console.log("🔍 useEffect für Authentifizierung ausgelöst, isAuthenticated:", !!isAuthenticated);
-    
-    // Nur PDFs laden, wenn der Benutzer authentifiziert ist UND wir noch keine PDFs haben UND nicht bereits laden
-    // UND nicht bereits einmal initial geladen haben
-    if (isAuthenticated && availablePdfs.length === 0 && !isLoadingPdfs && !initialLoadDoneRef.current) {
-      console.log("🔍 Lade PDFs, da Benutzer authentifiziert und keine PDFs vorhanden sind");
+    // Nur PDFs laden, wenn wir noch keine PDFs haben UND nicht bereits laden
+    if (availablePdfs.length === 0 && !isLoadingPdfs && !initialLoadDoneRef.current) {
+      console.log("🔍 Lade PDFs, da keine PDFs vorhanden sind");
       loadPdfs();
     } else {
       console.log("🔍 Überspringe PDF-Laden, Grund:", 
-        !isAuthenticated ? "Nicht authentifiziert" : 
         availablePdfs.length > 0 ? `Bereits ${availablePdfs.length} PDFs geladen` : 
         isLoadingPdfs ? "Ladevorgang bereits aktiv" : 
         initialLoadDoneRef.current ? "Initial Load bereits durchgeführt" : "Unbekannt");
     }
-  }, [isAuthenticated, availablePdfs.length, isLoadingPdfs]);
+  }, [availablePdfs.length, isLoadingPdfs]);
   
   // Verwende useCallback für die refreshPdfs-Funktion
   const refreshPdfs = useCallback(async () => {
@@ -276,9 +256,6 @@ const loadPdfChatHistory = (): PdfChatSession[] => {
 };
 
 export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: PdfChatProps) {
-  // Auth-Client holen
-  const { supabase, isAuthenticated } = useSupabaseAuth();
-  
   // PDF-Kontext nutzen
   const { availablePdfs, isLoadingPdfs, refreshPdfs, authToken } = usePdfContext();
   

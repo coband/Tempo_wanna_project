@@ -1,5 +1,4 @@
 export const LEVELS = [
-  "KiGa",
   "Kindergarten", 
   "1. Klasse", 
   "2. Klasse", 

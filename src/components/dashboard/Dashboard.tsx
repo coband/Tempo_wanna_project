@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { DashboardHeader } from './DashboardHeader';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useSupabase } from '@/contexts/SupabaseContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Book } from '@/lib/books';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import BookDetails from '../books/BookDetails';
 
 export default function Dashboard() {
-  const { supabase, loading: authLoading } = useSupabaseAuth();
+  const supabase = useSupabase();
+  const { loading: authLoading } = useAuth();
   const [recentBooks, setRecentBooks] = useState<Book[]>([]);
   const [bookCount, setBookCount] = useState<number>(0);
   const [borrowedCount, setBorrowedCount] = useState<number>(0);
