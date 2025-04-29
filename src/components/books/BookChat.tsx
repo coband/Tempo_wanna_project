@@ -76,7 +76,7 @@ const saveSearchHistory = (session: SearchSession) => {
       timestamp: session.timestamp.toISOString()
     }));
   } catch (error) {
-    console.error('Fehler beim Speichern des Suchverlaufs:', error);
+    // Fehler beim Speichern des Suchverlaufs
   }
 };
 
@@ -91,14 +91,14 @@ const loadSearchHistory = (): SearchSession | null => {
       timestamp: new Date(parsed.timestamp)
     };
   } catch (error) {
-    console.error('Fehler beim Laden des Suchverlaufs:', error);
+    // Fehler beim Laden des Suchverlaufs
     return null;
   }
 };
 
 export function BookChat({ open, onOpenChange }: BookChatProps) {
   // Authentifizierten Supabase-Client vom Hook beziehen
-  const { supabase } = useSupabase();
+  const supabase = useSupabase();
   const clerkAuth = useClerkAuth();
   const navigate = useNavigate();
   
@@ -264,6 +264,10 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         data = result.books || [];
       } else {
         // Alternativ: Supabase Functions API nutzen
+        if (!supabase || !supabase.functions) {
+          throw new Error("Supabase nicht verfügbar");
+        }
+        
         const { data: result, error } = await supabase.functions.invoke('search-books', {
           body: { query: searchQuery }
         });
@@ -276,32 +280,26 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       }
       
       if (data && Array.isArray(data) && data.length > 0) {
-        // Debug-Information: Rückgabedaten der API
-        console.log("DEBUG - Rohe Bücherdaten von API:", data);
-        console.log("DEBUG - Buch-Attribute:", data.map(book => ({
-          id: book.id,
-          title: book.title,
-          has_pdf: book.has_pdf,
-          has_pdf_type: typeof book.has_pdf
-        })));
-        
         // Überprüfe für jedes Buch, ob es ein PDF mit passender ISBN gibt
         const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
         
         // PDFs im Bucket abrufen
         let pdfList: string[] = [];
         try {
-          const { data: pdfData } = await supabase.storage
-            .from(bucketName)
-            .list();
-          
-          if (pdfData) {
-            // Nur PDF-Dateien filtern
-            pdfList = pdfData
-              .filter(file => file.name.toLowerCase().endsWith('.pdf'))
-              .map(file => file.name);
+          // Prüfe, ob supabase und storage verfügbar sind
+          if (supabase && supabase.storage) {
+            const { data: pdfData } = await supabase.storage
+              .from(bucketName)
+              .list();
             
-            console.log("Verfügbare PDFs:", pdfList);
+            if (pdfData) {
+              // Nur PDF-Dateien filtern
+              pdfList = pdfData
+                .filter(file => file.name.toLowerCase().endsWith('.pdf'))
+                .map(file => file.name);
+            }
+          } else {
+            console.warn("Supabase Storage nicht verfügbar");
           }
         } catch (error) {
           console.error("Fehler beim Abrufen der PDFs:", error);
@@ -311,8 +309,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         const booksWithPdfFlag = data.map(book => {
           // Prüfe zuerst, ob das Buch bereits ein has_pdf-Attribut aus der Datenbank hat
           if (book.has_pdf !== undefined) {
-            console.log(`Buch ${book.title} (ISBN: ${book.isbn}): Behalte vorhandenes has_pdf=${book.has_pdf} (Typ: ${typeof book.has_pdf})`);
-            // Konvertierung zu Boolean für konsistente Handhabung
             return {
               ...book,
               has_pdf: Boolean(book.has_pdf)
@@ -320,19 +316,23 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           }
           
           // Falls nicht, prüfe, ob ein PDF mit der ISBN existiert (exakt oder als Präfix)
+          // Prüfe zuerst, ob ISBN vorhanden ist
+          if (!book.isbn) {
+            return {
+              ...book,
+              has_pdf: false
+            };
+          }
+          
           const exactMatch = pdfList.includes(`${book.isbn}.pdf`);
           const prefixMatch = pdfList.some(pdf => pdf.startsWith(book.isbn));
           const hasPdf = exactMatch || prefixMatch;
-          
-          console.log(`Buch ${book.title} (ISBN: ${book.isbn}): has_pdf=${hasPdf}, exactMatch=${exactMatch}, prefixMatch=${prefixMatch}`);
           
           return {
             ...book,
             has_pdf: hasPdf
           };
         });
-        
-        console.log("Bücher mit PDF-Flag:", booksWithPdfFlag);
         
         // Speichere Suchsitzung
         const sessionId = `session_${Date.now()}`;
@@ -400,11 +400,13 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         console.warn("Fehler beim Abrufen des Auth-Tokens:", tokenError);
       }
       
-      // Bestimme, welchen Client wir verwenden
-      const client = authToken ? supabase : supabase;
+      // Sicherstellen, dass Supabase verfügbar ist
+      if (!supabase) {
+        throw new Error("Supabase nicht verfügbar");
+      }
       
       // Lade vollständige Buchinformationen
-      const { data: bookData, error } = await client
+      const { data: bookData, error } = await supabase
         .from('books')
         .select('*')
         .eq('id', searchBook.id)
@@ -417,17 +419,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       // Typumwandlung zu Book, da wir wissen, dass es ein Buch ist
       const typedBookData = bookData as unknown as Book;
       
-      console.log("Geladene Buchdaten aus DB:", typedBookData);
-      console.log("DEBUG - hat das Buch has_pdf in der DB?", {
-        has_pdf: typedBookData.has_pdf,
-        has_pdf_type: typeof typedBookData.has_pdf,
-        has_pdf_value: Boolean(typedBookData.has_pdf),
-        originalSearchBook: {
-          has_pdf: searchBook.has_pdf,
-          has_pdf_type: typeof searchBook.has_pdf
-        }
-      });
-      
       // Stellen Sie sicher, dass alle benötigten Eigenschaften in bookData enthalten sind
       const completeBookData = {
         ...typedBookData,
@@ -438,8 +429,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
         // Behalten Sie den has_pdf-Wert aus den DB-Daten bei, anstatt ihn zu überschreiben
         has_pdf: typeof typedBookData.has_pdf !== 'undefined' ? typedBookData.has_pdf : searchBook.has_pdf
       };
-      
-      console.log("Vollständige Buchdaten für Details:", completeBookData);
       
       // Vorbereitungen für den Übergang
       setSelectedBook(completeBookData as unknown as Book);
@@ -485,6 +474,16 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       // Transition-Effekt starten
       setIsTransitioning(true);
       
+      // Prüfe ob supabase verfügbar ist
+      if (!supabase || !supabase.storage) {
+        throw new Error("Supabase Storage nicht verfügbar");
+      }
+      
+      // Prüfe zuerst, ob ISBN vorhanden ist
+      if (!book.isbn) {
+        throw new Error("Keine ISBN für dieses Buch vorhanden");
+      }
+      
       const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
       
       // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
@@ -495,8 +494,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       if (error) {
         throw error;
       }
-      
-      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
       
       // Unterordner im Bucket finden
       const folders = data?.filter(item => item.id === null) || [];
@@ -513,8 +510,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           .list(folder.name);
           
         if (!folderError && folderFiles) {
-          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
-          
           // PDFs aus diesem Unterordner hinzufügen
           const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
           allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
@@ -523,8 +518,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           }))];
         }
       }
-      
-      console.log("Alle gefundenen PDFs:", allPdfs);
       
       // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
       if (allPdfs.length === 0) {
@@ -535,7 +528,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
           .getPublicUrl(pdfPath);
           
         if (fileData?.publicUrl) {
-          console.log("PDF direkt gefunden:", pdfPath);
           navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
           return;
         }
@@ -718,7 +710,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                     <div className="py-3 pb-4">
                       <div className="grid grid-cols-1 gap-4">
                         {books.map((book) => {
-                          console.log(`Rendering book ${book.title}: has_pdf=${book.has_pdf}`);
                           return (
                           <Card 
                             key={book.id} 
@@ -883,7 +874,6 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
                       <h3 className="text-lg font-medium mb-3">Gefundene Bücher ({books.length}):</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-2">
                         {books.map((book) => {
-                          console.log(`Rendering book in desktop view ${book.title}: has_pdf=${book.has_pdf}`);
                           return (
                           <Card 
                             key={book.id} 

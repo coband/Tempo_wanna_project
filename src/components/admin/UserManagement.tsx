@@ -78,17 +78,14 @@ export function UserManagement() {
   // Benutzer von Clerk abrufen
   const fetchUsers = async () => {
     try {
-      console.log("Benutzer werden von Clerk abgerufen...");
       const { data, error } = await supabase.functions.invoke('clerk-users', {
         body: { action: 'list-users' }
       });
       
       if (error) throw error;
       
-      console.log("Benutzer empfangen:", data.users);
       return data.users;
     } catch (error) {
-      console.error("Fehler beim Abrufen der Benutzer:", error);
       throw error;
     }
   };
@@ -107,7 +104,6 @@ export function UserManagement() {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error("Fehler beim Umschalten der Admin-Rolle:", error);
       throw error;
     }
   };
@@ -126,7 +122,6 @@ export function UserManagement() {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error("Fehler beim Umschalten der SuperAdmin-Rolle:", error);
       throw error;
     }
   };
@@ -145,7 +140,6 @@ export function UserManagement() {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error("Fehler beim Sperren/Entsperren des Benutzers:", error);
       throw error;
     }
   };
@@ -163,7 +157,6 @@ export function UserManagement() {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error("Fehler beim Zurücksetzen des Passworts:", error);
       throw error;
     }
   };
@@ -179,7 +172,6 @@ export function UserManagement() {
         setUsers(users);
         setFilteredUsers(users);
       } catch (error) {
-        console.error("Fehler beim Laden der Daten:", error);
         setError(error.message || 'Fehler beim Laden der Benutzerdaten');
       } finally {
         setLoading(false);
@@ -626,4 +618,4 @@ export function UserManagement() {
       </div>
     </div>
   );
-} 
+}

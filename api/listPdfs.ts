@@ -69,33 +69,16 @@ function respondCors(req: VercelRequest, res: VercelResponse, status = 200) {
 /*  HANDLER                                                                   */
 /* -------------------------------------------------------------------------- */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Generiere eine eindeutige Request-ID
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-  // Anfrage detailliert loggen
-  console.log(`\n[PDF-API][${req.method}][${requestId}] ========== NEUE ANFRAGE (${req.method}) ==========`);
-  console.log(`[PDF-API][${req.method}][${requestId}] Zeitstempel: ${new Date().toISOString()}`);
-  console.log(`[PDF-API][${req.method}][${requestId}] URL: ${req.url}`);
-  console.log(`[PDF-API][${req.method}][${requestId}] Herkunft: ${req.headers.origin || "Unbekannt"}`);
-  console.log(`[PDF-API][${req.method}][${requestId}] User-Agent: ${req.headers["user-agent"] || "Unbekannt"}`);
-  console.log(`[PDF-API][${req.method}][${requestId}] Referer: ${req.headers.referer || "Unbekannt"}`);
-  console.log(`[PDF-API][${req.method}][${requestId}] IP: ${req.headers["x-forwarded-for"] || req.socket.remoteAddress || "Unbekannt"}`);
-
+  // OPTIONS-Anfrage für CORS
   if (req.method === "OPTIONS") {
-    console.log(`[PDF-API][OPTIONS][${requestId}] OPTIONS-Anfrage bearbeitet`);
     respondCors(req, res, 204);
-    console.log(`[PDF-API][OPTIONS][${requestId}] ========== ANFRAGE BEENDET (OPTIONS) ==========\n`);
     return res.end();
   }
+  
   if (req.method !== "GET") {
-    console.log(`[PDF-API][${req.method}][${requestId}] Ungültige Methode: ${req.method}`);
     respondCors(req, res, 405);
-    console.log(`[PDF-API][${req.method}][${requestId}] ========== ANFRAGE BEENDET (UNGÜLTIGE METHODE) ==========\n`);
     return res.json({ error: "Method not allowed" });
   }
-
-  // Ab hier wissen wir, dass es eine GET-Anfrage ist
-  console.log(`[PDF-API][GET][${requestId}] GET-Anfrage wird verarbeitet...`);
 
   /* ---------- Clerk Auth ---------- */
   try {
@@ -105,7 +88,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       // Bearer-Token aus dem Header extrahieren
       const token = authHeader.substring(7); // "Bearer " entfernen
-      console.log(`[PDF-API][GET][${requestId}] Bearer-Token gefunden, versuche Validierung...`);
       
       // Versuche den Token zu validieren
       try {
@@ -130,24 +112,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         const authResult = await clerk.authenticateRequest(dummyRequest, authOptions);
         
-        if (authResult.isSignedIn) {
-          console.log(`[PDF-API][GET][${requestId}] Token-Validierung erfolgreich, Benutzer: ${authResult.toAuth().userId}`);
-          // Token ist gültig, Anfrage fortsetzen
-        } else {
-          console.log(`[PDF-API][GET][${requestId}] Token ist ungültig oder kein Benutzer gefunden`);
+        if (!authResult.isSignedIn) {
           respondCors(req, res, 401);
           return res.json({ error: "Unauthorized" });
         }
       } catch (tokenError) {
         // Token-Validierung fehlgeschlagen - Zugriff verweigern
-        console.error(`[PDF-API][GET][${requestId}] Token-Validierungsfehler:`, tokenError);
         respondCors(req, res, 401);
         return res.json({ error: "Invalid token" });
       }
     } else {
       // Cookie-basierte Authentifizierung als Fallback
-      console.log(`[PDF-API][GET][${requestId}] Kein Bearer-Token, versuche Cookie-basierte Authentifizierung`);
-      
       const absoluteUrl = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}${req.url}`;
       const fetchRequest = new Request(absoluteUrl, {
         method: req.method,
@@ -159,13 +134,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       if (!isSignedIn) {
-        console.log(`[PDF-API][GET][${requestId}] Nicht eingeloggt – Zugriff verweigert`);
         respondCors(req, res, 401);
         return res.json({ error: "Unauthorized" });
       }
     }
   } catch (authError) {
-    console.error(`[PDF-API][GET][${requestId}] Auth-Fehler:`, authError);
     respondCors(req, res, 401);
     return res.json({ error: "Unauthorized" });
   }
@@ -178,13 +151,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? req.query.path
       : "";
 
-  console.log(`[PDF-API][GET][${requestId}] Angeforderte Prefix/Path: "${prefix || "root"}"`);
-
   /* ---------- Direkter Abruf von R2 ---------- */
   try {
-    console.log(`[PDF-API][GET][${requestId}] Führe Cloudflare API-Anfrage aus...`);
-
-    const startTime = Date.now();
     const { Contents = [] } = await r2Client.send(
       new ListObjectsV2Command({
         Bucket: R2_BUCKET_NAME,
@@ -192,10 +160,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         MaxKeys: 1000, // Limit auf 1000 Objekte
       })
     );
-    const endTime = Date.now();
-
-    console.log(`[PDF-API][GET][${requestId}] *** CLOUDFLARE R2 API WURDE AUFGERUFEN! ***`);
-    console.log(`[PDF-API][GET][${requestId}] Cloudflare-Antwortzeit: ${endTime - startTime}ms`);
 
     const files = Contents.map((o) => ({
       name: o.Key,
@@ -203,17 +167,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lastModified: o.LastModified,
     }));
 
-    console.log(`[PDF-API][GET][${requestId}] ${files.length} Dateien gefunden`);
-
     respondCors(req, res);
     res.setHeader("Cache-Control", "no-store");
-    console.log(`[PDF-API][GET][${requestId}] ========== ANFRAGE BEENDET (OK) ==========\n`);
     return res.json({ files });
   } catch (error: any) {
-    console.error(`[PDF-API][GET][${requestId}] FEHLER: ${error.message || "Unbekannter Fehler"}`);
-    console.error(`[PDF-API][GET][${requestId}] Stack: ${error.stack || "Kein Stack-Trace verfügbar"}`);
+    console.error(`Fehler beim Abrufen der Dateien: ${error.message || "Unbekannter Fehler"}`);
     respondCors(req, res, 500);
-    console.log(`[PDF-API][GET][${requestId}] ========== ANFRAGE BEENDET (ERROR) ==========\n`);
     return res.json({ error: error.message || "Unexpected error" });
   }
 }

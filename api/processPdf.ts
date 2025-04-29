@@ -124,10 +124,6 @@ const clerk = createClerkClient({
 //  HELPERS
 // -----------------------------------------------------------------------------
 
-function log(msg: string) {
-  console.log(`[${new Date().toISOString()}] ${msg}`);
-}
-
 function respondCors(req: VercelRequest, res: VercelResponse, status = 200) {
   const origin = req.headers.origin as string | undefined;
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -153,7 +149,6 @@ async function getObjectETag(key: string): Promise<string | null> {
   }
   
   try {
-    console.log('[R2] HeadObject', key);
     const response = await r2Client.send(
       new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
     );
@@ -172,7 +167,7 @@ async function getObjectETag(key: string): Promise<string | null> {
     
     return etag;
   } catch (error) {
-    log(`Fehler beim Abrufen des ETag: ${error}`);
+    console.error(`Fehler beim Abrufen des ETag: ${error}`);
     return null;
   }
 }
@@ -186,7 +181,6 @@ async function getObjectSize(key: string): Promise<number | null> {
   }
   
   try {
-    console.log('[R2] HeadObject for size', key);
     const response = await r2Client.send(
       new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
     );
@@ -205,7 +199,7 @@ async function getObjectSize(key: string): Promise<number | null> {
     
     return size;
   } catch (error) {
-    log(`Fehler beim Abrufen der Dateigröße: ${error}`);
+    console.error(`Fehler beim Abrufen der Dateigröße: ${error}`);
     return null;
   }
 }
@@ -213,7 +207,6 @@ async function getObjectSize(key: string): Promise<number | null> {
 async function fetchPdfFromR2(key: string, etag: string | null): Promise<Buffer> {
   // Prüfe die Größe des PDFs (oder verwende bereits gecachte Metadaten)
   const fileSize = await getObjectSize(key);
-  log(`PDF Größe: ${fileSize ? (fileSize / (1024 * 1024)).toFixed(2) + ' MB' : 'unbekannt'}`);
   
   // Sicherheitscheck: Wenn das PDF zu groß ist, verweigere die Verarbeitung
   if (fileSize && fileSize > MAX_PROCESSABLE_PDF_SIZE) {
@@ -221,7 +214,6 @@ async function fetchPdfFromR2(key: string, etag: string | null): Promise<Buffer>
   }
   
   // Immer die vollständige Datei laden, für vollständige Analyse
-  console.log('[R2] GetObject', key, '(full)');
   try {
     const { Body } = await r2Client.send(
       new GetObjectCommand({ 
@@ -240,25 +232,11 @@ async function fetchPdfFromR2(key: string, etag: string | null): Promise<Buffer>
       const bufferChunk = chunk as Buffer;
       chunks.push(bufferChunk);
       totalSize += bufferChunk.length;
-      
-      // Fortschrittsanzeige für große Dateien
-      if (fileSize && fileSize > 10 * 1024 * 1024) { // Nur für Dateien > 10 MB
-        const progress = (totalSize / fileSize) * 100;
-        if (progress % 10 < 1) { // Log etwa alle 10%
-          log(`Download Fortschritt: ${progress.toFixed(0)}%`);
-        }
-      }
     }
     
-    log(`PDF erfolgreich heruntergeladen. Größe: ${(totalSize / (1024 * 1024)).toFixed(2)} MB`);
-    const pdfBuffer = Buffer.concat(chunks);
-    
-    // Kein PDF-Caching, nur das Metadaten-Caching bleibt aktiv
-    log(`PDF wird nach Verarbeitung freigegeben (kostenoptimiert)`);
-    
-    return pdfBuffer;
+    return Buffer.concat(chunks);
   } catch (error) {
-    console.error(`[R2] ERROR GetObject ${key}:`, error);
+    console.error(`Fehler beim Herunterladen der PDF-Datei: ${error instanceof Error ? error.message : String(error)}`);
     throw new Error(`Fehler beim Herunterladen der PDF-Datei: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -270,13 +248,10 @@ async function createPresignedUrl(key: string): Promise<string> {
   });
   
   // 1 Stunde gültigkeit
-  console.log('[R2] CreatePresignedUrl', key);
   return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
 }
 
 async function processPdf(pdfPath: string, question: string): Promise<string> {
-  log(`→ Analyse ${pdfPath}`);
-
   try {
     // 1. Zuerst den ETag der Datei holen (günstige Operation)
     const etag = await getObjectETag(pdfPath);
@@ -284,18 +259,8 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
     // Prüfe die Größe des PDFs
     const fileSize = await getObjectSize(pdfPath);
     
-    if (fileSize) {
-      log(`Verarbeite PDF mit Größe: ${(fileSize / (1024 * 1024)).toFixed(2)} MB`);
-      
-      // Warnung, wenn das PDF groß ist
-      if (fileSize > 50 * 1024 * 1024) {
-        log(`Warnung: Dieses PDF ist relativ groß (${(fileSize / (1024 * 1024)).toFixed(2)} MB). Die Verarbeitung kann länger dauern und höhere Kosten verursachen.`);
-      }
-      
-      // Fehler, wenn das PDF zu groß ist
-      if (fileSize > MAX_PROCESSABLE_PDF_SIZE) {
-        throw new Error(`Die PDF-Datei ist zu groß für die Verarbeitung (${(fileSize / (1024 * 1024)).toFixed(2)} MB). Das Limit liegt bei ${MAX_PROCESSABLE_PDF_SIZE / (1024 * 1024)} MB.`);
-      }
+    if (fileSize && fileSize > MAX_PROCESSABLE_PDF_SIZE) {
+      throw new Error(`Die PDF-Datei ist zu groß für die Verarbeitung (${(fileSize / (1024 * 1024)).toFixed(2)} MB). Das Limit liegt bei ${MAX_PROCESSABLE_PDF_SIZE / (1024 * 1024)} MB.`);
     }
     
     // Traditionelle Methode: PDF herunterladen und manuell verarbeiten
@@ -309,14 +274,10 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
       const tmpFile = path.join(tmpDir, `${Date.now()}.pdf`);
       await fs.writeFile(tmpFile, pdfBuffer);
 
-      log(`PDF gespeichert unter ${tmpFile} mit Größe ${(pdfBuffer.length / (1024 * 1024)).toFixed(2)} MB`);
-
       try {
         // In einen Blob konvertieren für die Gemini API
         const fileContent = await fs.readFile(tmpFile);
         const fileBlob = new Blob([fileContent], { type: 'application/pdf' });
-        
-        log('PDF wird zur Gemini API hochgeladen...');
         
         // PDF-Datei hochladen
         const file = await genAI.files.upload({
@@ -328,14 +289,12 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
         
         // Sicherstellen, dass file.name definiert ist
         const fileName = file.name || `unknown-file-${Date.now()}`;
-        log(`PDF hochgeladen zur Gemini API mit FileID: ${fileName}`);
         
         // Sofort die temporäre Datei löschen, da sie nicht mehr benötigt wird
         try {
           await fs.unlink(tmpFile);
-          log(`Temporäre Datei ${tmpFile} frühzeitig gelöscht (nach Upload)`);
         } catch (cleanupError) {
-          log(`Warnung: Konnte temporäre Datei nicht frühzeitig löschen: ${cleanupError}`);
+          console.error(`Warnung: Konnte temporäre Datei nicht frühzeitig löschen: ${cleanupError}`);
         }
         
         // Auf Verarbeitung warten
@@ -344,9 +303,6 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
         const maxAttempts = 15; // Mehr Versuche für große PDFs
         
         while (getFile.state === 'PROCESSING' && attempts < maxAttempts) {
-          log(`Aktueller Datei-Status: ${getFile.state}`);
-          log('Datei wird noch verarbeitet, erneuter Versuch in 2 Sekunden...');
-          
           // Warten und erneut prüfen
           await new Promise((resolve) => setTimeout(resolve, 2000));
           getFile = await genAI.files.get({ name: fileName });
@@ -360,9 +316,6 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
         if (attempts >= maxAttempts && getFile.state === 'PROCESSING') {
           throw new Error('Zeitüberschreitung bei der Dateiverarbeitung durch die Google Gemini API');
         }
-        
-        // Frage stellen
-        log(`Stelle Frage: ${question}`);
         
         // Inhalt für die Anfrage vorbereiten
         const content: Array<{text: string} | ReturnType<typeof createPartFromUri>> = [
@@ -387,18 +340,15 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
           
           // Datei aus der Google File API löschen, um Speicherplatz freizugeben
           try {
-            log(`Lösche hochgeladene Datei aus der Google File API: ${fileName}`);
             await genAI.files.delete({ name: fileName });
-            log(`Datei ${fileName} erfolgreich gelöscht`);
           } catch (deleteError) {
-            log(`Warnung: Konnte Datei ${fileName} nicht aus der Google File API löschen: ${deleteError}`);
+            console.error(`Warnung: Konnte Datei ${fileName} nicht aus der Google File API löschen: ${deleteError}`);
             // Fehler beim Löschen sollte den Prozess nicht unterbrechen
           }
           
-          log(`← Antwort für ${pdfPath}`);
           return responseText;
         } catch (genAiError: any) {
-          log(`Fehler bei Gemini-Generierung: ${genAiError}`);
+          console.error(`Fehler bei Gemini-Generierung: ${genAiError}`);
           
           // Bei bestimmten Fehlern von Gemini (PDF zu groß oder andere Probleme)
           // können wir das PDF nicht verarbeiten
@@ -411,7 +361,7 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
         }
         
       } catch (error: any) {
-        log(`Fehler bei Gemini-Verarbeitung: ${error.message}`);
+        console.error(`Fehler bei Gemini-Verarbeitung: ${error.message}`);
         throw new Error(`Fehler bei der Gemini-Verarbeitung: ${error.message}`);
       } finally {
         // Cleanup - nur noch als Backup, falls die frühzeitige Löschung fehlgeschlagen ist
@@ -420,18 +370,17 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
           const fileExists = await fs.access(tmpFile).then(() => true).catch(() => false);
           if (fileExists) {
             await fs.unlink(tmpFile);
-            log(`Temporäre Datei ${tmpFile} in finally-Block gelöscht`);
           }
         } catch (cleanupError) {
-          log(`Warnung: Konnte temporäre Datei nicht löschen: ${cleanupError}`);
+          console.error(`Warnung: Konnte temporäre Datei nicht löschen: ${cleanupError}`);
         }
       }
     } catch (fetchError: any) {
-      log(`Fehler beim Abrufen des PDF: ${fetchError.message}`);
+      console.error(`Fehler beim Abrufen des PDF: ${fetchError.message}`);
       throw new Error(`Fehler beim Abrufen des PDF: ${fetchError.message}`);
     }
   } catch (error: any) {
-    log(`Fehler bei PDF-Verarbeitung: ${error.message}`);
+    console.error(`Fehler bei PDF-Verarbeitung: ${error.message}`);
     throw error; // Weitergabe des Fehlers an den Haupthandler
   }
 }
@@ -441,16 +390,6 @@ async function processPdf(pdfPath: string, question: string): Promise<string> {
 // -----------------------------------------------------------------------------
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Generiere eine eindeutige Request-ID für Logging
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-  // Anfrage detailliert loggen
-  log(`[PDF-API][${req.method}][${requestId}] ========== NEUE ANFRAGE (${req.method}) ==========`);
-  log(`[PDF-API][${req.method}][${requestId}] Zeitstempel: ${new Date().toISOString()}`);
-  log(`[PDF-API][${req.method}][${requestId}] URL: ${req.url}`);
-  log(`[PDF-API][${req.method}][${requestId}] Herkunft: ${req.headers.origin || "Unbekannt"}`);
-  log(`[PDF-API][${req.method}][${requestId}] User-Agent: ${req.headers["user-agent"] || "Unbekannt"}`);
-
   // Early CORS
   if (req.method === 'OPTIONS') {
     respondCors(req, res, 204);
@@ -470,7 +409,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       // Bearer-Token aus dem Header extrahieren
       const token = authHeader.substring(7); // "Bearer " entfernen
-      log(`[PDF-API][POST][${requestId}] Bearer-Token gefunden, versuche Validierung...`);
       
       // Versuche den Token zu validieren
       try {
@@ -495,24 +433,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         const authResult = await clerk.authenticateRequest(dummyRequest, authOptions);
         
-        if (authResult.isSignedIn) {
-          log(`[PDF-API][POST][${requestId}] Token-Validierung erfolgreich, Benutzer: ${authResult.toAuth().userId}`);
-          // Token ist gültig, Anfrage fortsetzen
-        } else {
-          log(`[PDF-API][POST][${requestId}] Token ist ungültig oder kein Benutzer gefunden`);
+        if (!authResult.isSignedIn) {
           respondCors(req, res, 401);
           return res.json({ error: "Unauthorized" });
         }
       } catch (tokenError) {
         // Token-Validierung fehlgeschlagen - Zugriff verweigern
-        log(`[PDF-API][POST][${requestId}] Token-Validierungsfehler: ${tokenError}`);
         respondCors(req, res, 401);
         return res.json({ error: "Invalid token" });
       }
     } else {
       // Cookie-basierte Authentifizierung als Fallback
-      log(`[PDF-API][POST][${requestId}] Kein Bearer-Token, versuche Cookie-basierte Authentifizierung`);
-      
       const absoluteUrl = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}${req.url}`;
       const fetchRequest = new Request(absoluteUrl, {
         method: req.method,
@@ -524,13 +455,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       if (!isSignedIn) {
-        log(`[PDF-API][POST][${requestId}] Nicht eingeloggt – Zugriff verweigert`);
         respondCors(req, res, 401);
         return res.json({ error: "Unauthorized" });
       }
     }
   } catch (authError) {
-    log(`[PDF-API][POST][${requestId}] Auth-Fehler: ${authError}`);
     respondCors(req, res, 401);
     return res.json({ error: "Unauthorized" });
   }
@@ -543,20 +472,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       pdfPath = body.pdfPath;
       question = body.question;
     } catch (e) {
-      log(`Fehler beim Parsen des Request Body: ${req.body}`);
+      console.error(`Fehler beim Parsen des Request Body: ${req.body}`);
       throw new Error('Ungültiger Request Body');
     }
 
     if (!pdfPath || !question) throw new Error('pdfPath und question erforderlich');
 
-    log(`Anfrage erhalten für PDF: ${pdfPath}, Frage: ${question}`);
     const answer = await processPdf(pdfPath, question);
     
     respondCors(req, res, 200);
     return res.json({ answer });
   } catch (err: any) {
-    log(`Handler Error: ${err.message}`);
-    console.error(err);
+    console.error(`Handler Error: ${err.message}`);
     
     respondCors(req, res, 500);
     return res.json({ error: err.message || 'Unerwarteter Fehler' });

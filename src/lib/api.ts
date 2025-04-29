@@ -59,7 +59,6 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
       publisher: data.publisher || "",
     };
   } catch (error) {
-    console.error("Error fetching book info:", error);
     throw error;
   }
 }
@@ -72,19 +71,10 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
  * @returns Die Antwort der Gemini-API
  */
 export async function askPdfQuestion(pdfPath: string, question: string, authToken?: string) {
-  // Eindeutige ID für diese Anfrage generieren
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  
-  console.log(`📊 [${requestId}] API.TS: askPdfQuestion START`, new Date().toISOString());
-  console.log(`📊 [${requestId}] PDF: "${pdfPath}", Frage: "${question.substring(0, 30)}..."`);
-  console.log(`📊 [${requestId}] Auth-Token vorhanden: ${!!authToken}`);
-  
   try {
     // Basis-URL aus der Umgebung lesen
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
     const endpoint = `${baseUrl}/api/processPdf`;
-    
-    console.log(`📊 [${requestId}] Bereite Anfrage an ${endpoint} vor`);
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
@@ -94,43 +84,27 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
     // Auth-Token hinzufügen, falls vorhanden
     if (authToken) {
       headers["Authorization"] = `Bearer ${authToken}`;
-      console.log(`📊 [${requestId}] Authorization-Header hinzugefügt`);
     }
-    
-    // API-Anfrage senden
-    console.log(`📊 [${requestId}] Sende Anfrage an ${endpoint}`, new Date().toISOString());
-    const startTime = performance.now();
     
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify({ pdfPath, question }),
     });
-    
-    const endTime = performance.now();
-    console.log(`📊 [${requestId}] Antwort erhalten nach ${Math.round(endTime - startTime)}ms`, new Date().toISOString());
-    console.log(`📊 [${requestId}] Status: ${response.status}`);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      console.log(`📊 [${requestId}] Fehler: ${JSON.stringify(errorData)}`);
       throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || 'Unbekannter Fehler'}`);
     }
 
-    console.log(`📊 [${requestId}] Antwortobjekt wird gelesen...`);
     const data = await response.json();
     
     if (!data || !data.answer) {
-      console.log(`📊 [${requestId}] Keine gültige Antwort erhalten: ${JSON.stringify(data)}`);
       throw new Error("Keine gültige Antwort von der API erhalten");
     }
 
-    console.log(`📊 [${requestId}] Antwort erfolgreich verarbeitet, Länge: ${data.answer.length} Zeichen`);
-    console.log(`📊 [${requestId}] askPdfQuestion ENDE`, new Date().toISOString());
     return data.answer;
   } catch (error: any) {
-    console.error(`📊 [${requestId}] FEHLER:`, error);
-    console.log(`📊 [${requestId}] askPdfQuestion FEHLER ENDE`, new Date().toISOString());
     throw error;
   }
 }
@@ -141,18 +115,10 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
  * @returns Eine Liste mit PDF-Datei-Informationen
  */
 export async function fetchPdfs(authToken?: string) {
-  // Eindeutige ID für diese Anfrage generieren
-  const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  
-  console.log(`📊 [${requestId}] API.TS: fetchPdfs START`, new Date().toISOString());
-  console.log(`📊 [${requestId}] Auth-Token vorhanden: ${!!authToken}`);
-  
   try {
     // Basis-URL aus der Umgebung lesen
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
     const endpoint = `${apiUrl}/api/listPdfs`;
-    
-    console.log(`📊 [${requestId}] Bereite Anfrage an ${endpoint} vor`);
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
@@ -162,16 +128,11 @@ export async function fetchPdfs(authToken?: string) {
     // Auth-Token hinzufügen, falls vorhanden
     if (authToken) {
       headers["Authorization"] = `Bearer ${authToken}`;
-      console.log(`📊 [${requestId}] Authorization-Header hinzugefügt`);
     }
     
     // Cache-busting Parameter für die API-Anfrage hinzufügen
     const cacheBuster = Date.now();
     const requestUrl = `${endpoint}?_cb=${cacheBuster}`;
-    
-    // API-Anfrage senden
-    console.log(`📊 [${requestId}] Sende Anfrage an ${requestUrl}`, new Date().toISOString());
-    const startTime = performance.now();
     
     const response = await fetch(requestUrl, {
       method: "GET",
@@ -179,31 +140,20 @@ export async function fetchPdfs(authToken?: string) {
       // Cache-Kontrolle hinzufügen
       cache: "no-store"
     });
-    
-    const endTime = performance.now();
-    console.log(`📊 [${requestId}] Antwort erhalten nach ${Math.round(endTime - startTime)}ms`, new Date().toISOString());
-    console.log(`📊 [${requestId}] Status: ${response.status}`);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      console.log(`📊 [${requestId}] Fehler: ${JSON.stringify(errorData)}`);
       throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || 'Unbekannter Fehler'}`);
     }
 
-    console.log(`📊 [${requestId}] Antwortobjekt wird gelesen...`);
     const data = await response.json();
     
     if (!data || !data.files) {
-      console.log(`📊 [${requestId}] Keine gültigen Daten erhalten: ${JSON.stringify(data)}`);
       throw new Error("Keine gültigen Daten von der API erhalten");
     }
 
-    console.log(`📊 [${requestId}] ${data.files.length} PDF-Dateien gefunden`);
-    console.log(`📊 [${requestId}] fetchPdfs ENDE`, new Date().toISOString());
     return data.files;
   } catch (error) {
-    console.error(`📊 [${requestId}] FEHLER:`, error);
-    console.log(`📊 [${requestId}] fetchPdfs FEHLER ENDE`, new Date().toISOString());
     throw error;
   }
 }

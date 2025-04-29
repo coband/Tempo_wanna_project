@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useSupabase } from '@/contexts/SupabaseContext';
@@ -47,18 +47,6 @@ function BookDetails({
     return () => window.removeEventListener('resize', checkIfMobile);
   }, []);
 
-  // Debug-Ausgabe der Buchdaten
-  useEffect(() => {
-    if (open && initialBook) {
-      console.log("Initial book data:", {
-        id: initialBook.id,
-        title: initialBook.title,
-        available: initialBook.available,
-        availableType: typeof initialBook.available
-      });
-    }
-  }, [initialBook, open]);
-
   // Lade vollständige Buchdaten beim Öffnen des Dialogs
   useEffect(() => {
     if (!open || !initialBook?.id) return;
@@ -66,7 +54,6 @@ function BookDetails({
     const fetchCompleteBookData = async () => {
       try {
         setIsDataLoading(true);
-        console.log(`Lade vollständige Daten für Buch mit ID ${initialBook.id}...`);
         
         // Direktes Laden aus der Datenbank mit Fokus auf Verfügbarkeit
         const { data, error } = await supabase
@@ -76,27 +63,17 @@ function BookDetails({
           .single();
           
         if (error) {
-          console.error("Fehler beim Laden der vollständigen Buchdaten:", error);
           // Fallback auf initialBook bei Fehler
           setBookData(initialBook);
           return;
         }
         
         if (data) {
-          console.log("Geladene Buchdaten aus DB:", {
-            id: data.id,
-            title: data.title,
-            available: data.available,
-            availableType: typeof data.available
-          });
-          
           setBookData(data as unknown as Book);
         } else {
-          console.warn("Keine Daten für Buch mit ID", initialBook.id, "gefunden");
           setBookData(initialBook);
         }
       } catch (err) {
-        console.error("Fehler beim Laden der Buchdaten:", err);
         setBookData(initialBook);
       } finally {
         setIsDataLoading(false);
@@ -151,8 +128,6 @@ function BookDetails({
             borrowed_at: null,
             borrowed_by: null,
           };
-
-      console.log("Aktualisiere Buch mit Daten:", updateData);
       
       const { error } = await supabase
         .from("books")
@@ -178,7 +153,6 @@ function BookDetails({
         onBookChange();
       }
     } catch (error) {
-      console.error("Error toggling availability:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -190,82 +164,17 @@ function BookDetails({
   };
 
   // Handler für das Öffnen des PDF-Chats
-  const handleOpenPdfChat = async () => {
+  const handleOpenPdfChat = () => {
     try {
-      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
+      // Cloudflare R2 Bucket verwendet genau dieses Format: "ISBN _Titel.pdf"
+      const pdfPath = `${book.isbn} _${book.title?.replace(/[^\w\säöüÄÖÜß]/g, '')}.pdf`;
       
-      // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
-      let { data, error } = await supabase.storage
-        .from(bucketName)
-        .list();
-      
-      if (error) {
-        throw error;
-      }
-      
-      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
-      
-      // Unterordner im Bucket finden
-      const folders = data?.filter(item => item.id === null) || [];
-      let allPdfs: { name: string, fullPath: string }[] = [];
-      
-      // PDFs im Hauptverzeichnis hinzufügen
-      let mainDirPdfs = data?.filter(file => file.name.toLowerCase().endsWith('.pdf')) || [];
-      allPdfs = mainDirPdfs.map(file => ({ name: file.name, fullPath: file.name }));
-      
-      // In jedem Unterordner suchen
-      for (const folder of folders) {
-        const { data: folderFiles, error: folderError } = await supabase.storage
-          .from(bucketName)
-          .list(folder.name);
-          
-        if (!folderError && folderFiles) {
-          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
-          
-          // PDFs aus diesem Unterordner hinzufügen
-          const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
-          allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
-            name: file.name, 
-            fullPath: `${folder.name}/${file.name}` 
-          }))];
-        }
-      }
-      
-      console.log("Alle gefundenen PDFs:", allPdfs);
-      
-      // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
-      if (allPdfs.length === 0) {
-        // Versuche direkt eine Datei mit der ISBN zu laden
-        const pdfPath = `${book.isbn}.pdf`;
-        const { data: fileData } = await supabase.storage
-          .from(bucketName)
-          .getPublicUrl(pdfPath);
-          
-        if (fileData?.publicUrl) {
-          console.log("PDF direkt gefunden:", pdfPath);
-          navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
-          return;
-        }
-        
-        throw new Error("Keine PDFs gefunden");
-      }
-      
-      // Nach PDF mit der ISBN als Präfix suchen
-      const pdfNamePattern = new RegExp(`^${book.isbn}.*\\.pdf$`, 'i');
-      const matchingPdf = allPdfs.find(file => pdfNamePattern.test(file.name));
-      
-      if (!matchingPdf) {
-        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
-      }
-      
-      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
-      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.fullPath)}`);
-      
+      // Direkt zum PDF-Chat navigieren
+      navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
     } catch (error: any) {
-      console.error("Fehler beim Öffnen des PDF-Chats:", error);
       toast({
         variant: "destructive",
-        title: "Fehler",
+        title: "Fehler beim Öffnen des PDF-Chats",
         description: error.message || "Das PDF konnte nicht geladen werden."
       });
     }
@@ -335,6 +244,9 @@ function BookDetails({
           flexDirection: 'column'
         } : {}}
       >
+        <DialogDescription className="sr-only">
+          Detailansicht für das Buch {book.title} von {book.author}
+        </DialogDescription>
         {isMobile ? (
           <>
             <MobileHeader />

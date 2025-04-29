@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, createContext, useContext, useCallback } from 'react';
+import * as React from 'react';
+import { useState, useRef, useEffect, createContext, useContext, useCallback } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -86,35 +87,44 @@ const PdfContext = createContext<PdfContextType>({
 export function PdfProvider({ children }: { children: React.ReactNode }) {
   const [availablePdfs, setAvailablePdfs] = useState<PdfFile[]>([]);
   const [isLoadingPdfs, setIsLoadingPdfs] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const { getToken } = useAuth();
-  
-  // Speichere den Auth-Token in einer Ref für die Wiederverwendung
-  const authTokenRef = useRef<string | null>(null);
   
   // Neue Ref zur Verfolgung, ob initial bereits geladen wurde
   const initialLoadDoneRef = useRef<boolean>(false);
   
   const fetchAuthToken = async (): Promise<string | null> => {
-    // Wenn wir bereits einen Token haben, wiederverwendern wir ihn
-    if (authTokenRef.current) {
-      return authTokenRef.current;
+    try {
+      // Token von useAuth holen
+      const token = await getToken();
+      
+      // Token im State speichern
+      if (token) {
+        setAuthToken(token);
+      }
+      
+      return token;
+    } catch (error) {
+      console.error("Fehler beim Abrufen des Auth-Tokens:", error);
+      return null;
     }
-    
-    // Ansonsten holen wir einen neuen Token
-    const token = await getToken();
-    // Speichere den Token für zukünftige Verwendung
-    authTokenRef.current = token;
-    return token;
   };
+  
+  // Auth-Token beim Start holen
+  useEffect(() => {
+    if (!authToken) {
+      fetchAuthToken();
+    }
+  }, []);
   
   const loadPdfs = async () => {
     setIsLoadingPdfs(true);
     try {
-      // Auth-Token holen
-      const authToken = await fetchAuthToken();
+      // Frischen Auth-Token holen
+      const currentToken = await fetchAuthToken();
       
       // Neue fetchPdfs-Funktion verwenden
-      const files = await fetchPdfs(authToken || undefined);
+      const files = await fetchPdfs(currentToken || undefined);
       
       // PDF-Dateien formatieren
       const pdfFiles = files
@@ -132,19 +142,16 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
           };
         });
       
-      console.log("🔍 Gefundene PDFs:", pdfFiles.length, "Dateien");
-      
       // Aktualisiere den State mit allen gefundenen PDFs
       setAvailablePdfs(pdfFiles);
       
       // Markiere, dass initial geladen wurde, aber nur wenn PDFs gefunden wurden
       if (pdfFiles.length > 0) {
         initialLoadDoneRef.current = true;
-      } else {
-        console.log("🔍 Keine PDFs gefunden, initialLoadDoneRef bleibt auf false");
       }
     } catch (error) {
-      console.error('Fehler beim Laden der PDFs:', error);
+      // Fehler beim Laden der PDFs
+      console.error("Fehler beim Laden der PDFs:", error);
     } finally {
       setIsLoadingPdfs(false);
     }
@@ -154,24 +161,19 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Nur PDFs laden, wenn wir noch keine PDFs haben UND nicht bereits laden
     if (availablePdfs.length === 0 && !isLoadingPdfs && !initialLoadDoneRef.current) {
-      console.log("🔍 Lade PDFs, da keine PDFs vorhanden sind");
       loadPdfs();
-    } else {
-      console.log("🔍 Überspringe PDF-Laden, Grund:", 
-        availablePdfs.length > 0 ? `Bereits ${availablePdfs.length} PDFs geladen` : 
-        isLoadingPdfs ? "Ladevorgang bereits aktiv" : 
-        initialLoadDoneRef.current ? "Initial Load bereits durchgeführt" : "Unbekannt");
     }
   }, [availablePdfs.length, isLoadingPdfs]);
   
   // Verwende useCallback für die refreshPdfs-Funktion
   const refreshPdfs = useCallback(async () => {
     if (isLoadingPdfs) {
-      console.log("🔍 Überspringe manuellen Refresh, da Ladevorgang bereits aktiv");
       return;
     }
     
-    console.log("🔍 Manueller Refresh ausgelöst");
+    // Neuen Token holen
+    await fetchAuthToken();
+    
     // Cache zurücksetzen, damit alle aktuellen Dateien neu geladen werden
     initialLoadDoneRef.current = false;
     // State leeren, damit neu geladen wird
@@ -185,7 +187,7 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
       availablePdfs, 
       isLoadingPdfs, 
       refreshPdfs,
-      authToken: authTokenRef.current
+      authToken
     }}>
       {children}
     </PdfContext.Provider>
@@ -229,7 +231,7 @@ const savePdfChatHistory = (session: PdfChatSession) => {
     
     localStorage.setItem(storagePdfChatKey, JSON.stringify(sortedChats));
   } catch (error) {
-    console.error('Fehler beim Speichern des PDF-Chat-Verlaufs:', error);
+    // Fehler beim Speichern ignorieren
   }
 };
 
@@ -250,275 +252,40 @@ const loadPdfChatHistory = (): PdfChatSession[] => {
       }))
     })) : [];
   } catch (error) {
-    console.error('Fehler beim Laden des PDF-Chat-Verlaufs:', error);
     return [];
   }
 };
 
+// Hauptkomponente für den PDF-Chat
 export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: PdfChatProps) {
-  // PDF-Kontext nutzen
+  const [inputValue, setInputValue] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState('');
+  const [selectedPdfName, setSelectedPdfName] = useState('');
+  const [isMobile, setIsMobile] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const { toast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [pendingPdf, setPendingPdf] = useState<string | null>(null);
+  const [currentSessionId, setCurrentSessionId] = useState(`pdf-chat-${Date.now()}`);
+  const [chatHistory, setChatHistory] = useState<PdfChatSession[]>([]);
+  
+  // Zugriff auf den PDF-Kontext
   const { availablePdfs, isLoadingPdfs, refreshPdfs, authToken } = usePdfContext();
   
-  // State für PDF-Chat
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedPdf, setSelectedPdf] = useState<string>(initialPdf || '');
-  const [selectedPdfName, setSelectedPdfName] = useState<string>('');
-  const [pendingPdf, setPendingPdf] = useState<string | undefined>(initialPdf); // Speichert das zu ladende PDF
-  const [showChatHistory, setShowChatHistory] = useState(false);
-  const [chatSessions, setChatSessions] = useState<PdfChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string>(`pdf-chat-${Date.now()}`);
-  const [isMobile, setIsMobile] = useState(false);
-  const { toast } = useToast();
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Überprüfen, ob Mobilgerät
-  useEffect(() => {
-    const checkIfMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    
-    checkIfMobile();
-    window.addEventListener('resize', checkIfMobile);
-    
-    return () => {
-      window.removeEventListener('resize', checkIfMobile);
-    };
-  }, []);
-
-  // Chat-Verlauf laden, wenn Komponente geöffnet wird
-  useEffect(() => {
-    if (open) {
-      const history = loadPdfChatHistory();
-      setChatSessions(history);
-      
-      // Wenn es initialPdf gibt, setze es als pendingPdf
-      if (initialPdf) {
-        setPendingPdf(initialPdf);
-      }
-      // Wenn es keinen aktiven Chat gibt, starte einen neuen
-      else if (messages.length === 0 && selectedPdf === '') {
-        setCurrentSessionId(`pdf-chat-${Date.now()}`);
-      }
+  // Auth Hook für Direktzugriff
+  const { getToken } = useAuth();
+  
+  // Speichere die aktuelle Fenstergröße in einen State
+  const checkIfMobile = () => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 768;
     }
-  }, [open, initialPdf]);
-
-  // Scroll zum Ende, wenn neue Nachrichten hinzugefügt werden
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
-    if (scrollAreaRef.current) {
-      // Direkt zum Ende scrollen mit dem nativen overflow
-      setTimeout(() => {
-        if (scrollAreaRef.current) {
-          scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
-        }
-      }, 100);
-    } else {
-      // Fallback
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    return false;
   };
 
-  // Auto-scroll bei neuen Nachrichten
-  useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(scrollToBottom, 150);
-    }
-  }, [messages]);
-
-  // Auto-scroll wenn Laden beendet ist
-  useEffect(() => {
-    if (!isLoading && messages.length > 0) {
-      setTimeout(scrollToBottom, 200);
-    }
-  }, [isLoading]);
-
-  // Scroll zum Ende wenn neue Nachricht hinzukommt
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollToBottom();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [messages.length]);
-
-  // Scroll zum Ende bei Fenstergrößenänderung
-  useEffect(() => {
-    const handleResize = () => {
-      if (messages.length > 0) {
-        scrollToBottom();
-      }
-    };
-    
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [messages.length]);
-
-  // Suche nach pendingPdf, wenn alle PDFs geladen sind
-  useEffect(() => {
-    if (pendingPdf && availablePdfs.length > 0) {
-      console.log("Suche nach pendingPdf:", pendingPdf);
-      
-      // Überprüfen, ob es eine direkte Übereinstimmung gibt
-      let matchingPdf = availablePdfs.find(pdf => pdf.path === pendingPdf);
-      
-      // Wenn keine direkte Übereinstimmung, prüfe, ob das pendingPdf eine ISBN ist
-      // und finde eine Datei, die mit dieser ISBN beginnt
-      if (!matchingPdf && pendingPdf.match(/^\d+\.pdf$/)) {
-        // Extrahiere die ISBN aus pendingPdf (entferne .pdf)
-        const isbn = pendingPdf.replace('.pdf', '');
-        console.log("Suche nach ISBN:", isbn);
-        
-        // Finde ein PDF, das mit der ISBN beginnt
-        matchingPdf = availablePdfs.find(pdf => pdf.path.startsWith(isbn));
-      }
-      
-      if (matchingPdf) {
-        console.log("PDF gefunden:", matchingPdf);
-        // Das PDF wurde gefunden, wähle es aus
-        setSelectedPdf(matchingPdf.path); // Verwende den vollständigen Pfad
-        setSelectedPdfName(matchingPdf.name);
-        
-        // Begrüßungsnachricht hinzufügen
-        setMessages([{
-          type: 'assistant',
-          content: `Ich bin bereit, Fragen zu "${matchingPdf.name}" zu beantworten. Was möchten Sie wissen?`,
-          timestamp: new Date()
-        }]);
-        
-        // Zurücksetzen nach erfolgreicher Auswahl
-        setPendingPdf(undefined);
-      } else {
-        console.warn(`PDF "${pendingPdf}" wurde nicht im Bucket gefunden`);
-        
-        // Falls das pendingPdf eine ISBN ist, gib eine konkretere Fehlermeldung aus
-        if (pendingPdf.match(/^\d+\.pdf$/)) {
-          const isbn = pendingPdf.replace('.pdf', '');
-          console.log("Verfügbare PDF-Pfade:", availablePdfs.map(pdf => pdf.path));
-          toast({
-            variant: "default",
-            title: "PDF nicht gefunden",
-            description: `Kein PDF mit ISBN ${isbn} konnte gefunden werden.`
-          });
-        } else {
-          toast({
-            variant: "default",
-            title: "PDF nicht gefunden",
-            description: `Das PDF "${pendingPdf}" konnte nicht gefunden werden.`
-          });
-        }
-      }
-    }
-  }, [availablePdfs, pendingPdf, toast]);
-
-  // Funktion zum Laden eines bestehenden Chats
-  const loadChatSession = (session: PdfChatSession) => {
-    setSelectedPdf(session.pdfPath);
-    setSelectedPdfName(session.pdfName);
-    setMessages(session.messages);
-    setCurrentSessionId(session.id);
-    setShowChatHistory(false);
-  };
-
-  // Funktion zum Starten eines neuen Chats
-  const startNewChat = () => {
-    setSelectedPdf('');
-    setSelectedPdfName('');
-    setMessages([]);
-    setCurrentSessionId(`pdf-chat-${Date.now()}`);
-    setShowChatHistory(false);
-  };
-
-  // Funktion zum Senden einer Frage
-  const sendQuestion = async () => {
-    if (!inputValue.trim() || !selectedPdf || isLoading) return;
-    
-    console.log("📝 sendQuestion START", new Date().toISOString(), "SessionID:", currentSessionId);
-    
-    const userMessage: Message = {
-      type: 'user',
-      content: inputValue,
-      timestamp: new Date()
-    };
-    
-    // Benutzeranfrage hinzufügen
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    setIsLoading(true);
-    
-    try {
-      // API-Anfrage senden mit dem zwischengespeicherten Token
-      console.log("🔍 Frage an PDF senden", selectedPdf, "Frage:", inputValue.substring(0, 50) + (inputValue.length > 50 ? "..." : ""));
-      console.log("📝 VOR askPdfQuestion Aufruf", new Date().toISOString());
-      const answer = await askPdfQuestion(
-        selectedPdf, 
-        inputValue,
-        authToken || undefined
-      );
-      console.log("📝 NACH askPdfQuestion Aufruf", new Date().toISOString());
-      console.log("🔍 Antwort erhalten von der API");
-      
-      // Antwort hinzufügen
-      const assistantMessage: Message = {
-        type: 'assistant',
-        content: answer,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
-      
-      // Chat-Session speichern
-      const updatedSession: PdfChatSession = {
-        id: currentSessionId,
-        pdfPath: selectedPdf,
-        pdfName: selectedPdfName,
-        messages: [...messages, userMessage, assistantMessage],
-        timestamp: new Date()
-      };
-      
-      savePdfChatHistory(updatedSession);
-      console.log("📝 Chat-Session gespeichert", updatedSession.id);
-    } catch (error: any) {
-      console.error("Fehler bei der Anfrage:", error);
-      console.log("📝 FEHLER bei askPdfQuestion", new Date().toISOString(), error.message);
-      
-      // Fehlermeldung als Nachricht anzeigen
-      const errorMessage: Message = {
-        type: 'assistant',
-        content: `Bei der Verarbeitung ist ein Fehler aufgetreten: ${error.message || 'Unbekannter Fehler'}`,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
-      
-      toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: error.message || "Bei der Verarbeitung ist ein Fehler aufgetreten."
-      });
-    } finally {
-      setIsLoading(false);
-      console.log("📝 sendQuestion ENDE", new Date().toISOString());
-    }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendQuestion();
-    }
-  };
-
+  // Funktion zur Auswahl eines PDFs
   const handlePdfSelect = (pdfPath: string) => {
     // Nur aktualisieren, wenn sich die Auswahl geändert hat
     if (pdfPath !== selectedPdf) {
@@ -540,6 +307,255 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
         setCurrentSessionId(`pdf-chat-${Date.now()}`);
         setInputValue('');
       }
+    }
+  };
+  
+  // UseEffect zum Laden der Chat-Historie beim ersten Rendern
+  useEffect(() => {
+    try {
+      const history = loadPdfChatHistory();
+      setChatHistory(history);
+    } catch (error) {
+      // Fehler beim Laden der Historie
+    }
+  }, []);
+  
+  // UseEffect zum Auto-Scrollen zu neuen Nachrichten
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+  
+  // Funktion zum Auto-Scrollen
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+  
+  // UseEffect für das automatische Öffnen eines PDF, wenn eines übergeben wurde
+  useEffect(() => {
+    if (initialPdf && open) {
+      // Prüfen, ob die verfügbaren PDFs bereits geladen sind
+      if (availablePdfs.length > 0) {
+        // Versuchen, das PDF zu finden
+        const foundPdf = availablePdfs.find(pdf => pdf.path === initialPdf);
+        
+        if (foundPdf) {
+          // PDF gefunden, auswählen
+          handlePdfSelect(initialPdf);
+        } else {
+          // PDF nicht gefunden, aber wir merken es uns für später
+          setPendingPdf(initialPdf);
+        }
+      } else {
+        // PDFs noch nicht geladen, merken wir uns das zu öffnende PDF
+        setPendingPdf(initialPdf);
+      }
+    }
+  }, [initialPdf, open, availablePdfs]);
+  
+  // UseEffect für die Erkennung der Fenstergröße
+  useEffect(() => {
+    // Prüfe, ob wir im Browser sind
+    if (typeof window !== "undefined") {
+      // Initiale Prüfung
+      setIsMobile(checkIfMobile());
+      
+      // Event-Listener für Größenänderungen
+      const handleResize = () => {
+        setIsMobile(checkIfMobile());
+      };
+      
+      window.addEventListener('resize', handleResize);
+      
+      // Cleanup beim Unmount
+      return () => {
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }, []);
+  
+  // Versuche, ein pending PDF zu öffnen, sobald die PDFs geladen sind
+  useEffect(() => {
+    if (pendingPdf && availablePdfs.length > 0) {
+      // Versuchen, das PDF zu finden
+      const foundPdf = availablePdfs.find(pdf => pdf.path === pendingPdf);
+      
+      if (foundPdf) {
+        // PDF gefunden, auswählen
+        handlePdfSelect(pendingPdf);
+        setPendingPdf(null); // Zurücksetzen des Pending-Status
+      } else {
+        // Versuch mit URL-decodiertem Pfad, falls er zuvor encodiert wurde
+        const decodedPendingPdf = decodeURIComponent(pendingPdf);
+        const foundDecodedPdf = availablePdfs.find(pdf => pdf.path === decodedPendingPdf);
+        
+        if (foundDecodedPdf) {
+          handlePdfSelect(foundDecodedPdf.path);
+          setPendingPdf(null);
+          return;
+        }
+        
+        // Versuch, nach ISBN im Dateinamen zu suchen
+        const isbnMatch = pendingPdf.match(/(\d{10,13})[\s_\.]/);
+        if (isbnMatch && isbnMatch[1]) {
+          const isbn = isbnMatch[1];
+          const foundByIsbn = availablePdfs.find(pdf => pdf.path.includes(isbn));
+          
+          if (foundByIsbn) {
+            handlePdfSelect(foundByIsbn.path);
+            setPendingPdf(null);
+            return;
+          }
+        }
+        
+        // Falls das pendingPdf eine ISBN ist, gib eine konkretere Fehlermeldung aus
+        if (pendingPdf.match(/^\d+\.pdf$/)) {
+          const isbn = pendingPdf.replace('.pdf', '');
+          toast({
+            variant: "destructive",
+            title: "PDF nicht gefunden",
+            description: `Kein PDF mit ISBN ${isbn} konnte gefunden werden. Verfügbare PDFs: ${availablePdfs.length}`
+          });
+        } else {
+          toast({
+            variant: "destructive",
+            title: "PDF nicht gefunden",
+            description: `Das PDF "${pendingPdf}" konnte nicht gefunden werden. Prüfen Sie die R2 Bucket.`
+          });
+        }
+      }
+    }
+  }, [availablePdfs, pendingPdf, toast, handlePdfSelect]);
+
+  // Funktion zum Laden eines bestehenden Chats
+  const loadChatSession = (session: PdfChatSession) => {
+    setSelectedPdf(session.pdfPath);
+    setSelectedPdfName(session.pdfName);
+    setMessages(session.messages);
+    setCurrentSessionId(session.id);
+    setShowChatHistory(false);
+  };
+
+  // Funktion zum Starten eines neuen Chats
+  const startNewChat = () => {
+    setSelectedPdf('');
+    setSelectedPdfName('');
+    setMessages([]);
+    setCurrentSessionId(`pdf-chat-${Date.now()}`);
+    setShowChatHistory(false);
+  };
+
+  // Funktion zum Senden einer Frage
+  const sendQuestion = async () => {
+    if (!selectedPdf || !inputValue.trim() || isLoading) return;
+    
+    // Aktuellen Token abrufen, falls er inzwischen abgelaufen sein könnte
+    let currentToken = authToken;
+    
+    // Kein Token? Versuche einen neuen zu bekommen
+    if (!currentToken) {
+      try {
+        // Direkt getToken verwenden, statt useAuth innerhalb dieser Funktion
+        currentToken = await getToken();
+        
+        if (!currentToken) {
+          toast({
+            title: "Authentifizierungsfehler",
+            description: "Kein Authentifizierungs-Token verfügbar. Bitte neu anmelden.",
+            variant: "destructive"
+          });
+        }
+      } catch (tokenError) {
+        console.error("Fehler beim Abrufen des Tokens:", tokenError);
+        
+        toast({
+          title: "Authentifizierungsfehler",
+          description: "Es gab ein Problem mit Ihrer Anmeldung. Bitte melden Sie sich erneut an.",
+          variant: "destructive"
+        });
+        
+        return; // Bei Token-Problemen nicht weitermachen
+      }
+    }
+    
+    const userMessage: Message = {
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date()
+    };
+    
+    // Benutzeranfrage hinzufügen
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setIsLoading(true);
+    
+    try {
+      // API-Anfrage senden mit dem aktuellen Token
+      const answer = await askPdfQuestion(
+        selectedPdf, 
+        inputValue,
+        currentToken || undefined
+      );
+      
+      // Antwort hinzufügen
+      const assistantMessage: Message = {
+        type: 'assistant',
+        content: answer,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Chat-Session speichern
+      const updatedSession: PdfChatSession = {
+        id: currentSessionId,
+        pdfPath: selectedPdf,
+        pdfName: selectedPdfName,
+        messages: [...messages, userMessage, assistantMessage],
+        timestamp: new Date()
+      };
+      
+      savePdfChatHistory(updatedSession);
+    } catch (error: any) {
+      console.error("PDF-Chat Fehler:", error);
+      
+      // Bei 401-Fehlern spezifischere Nachricht anzeigen
+      const isAuthError = error.message.includes("401") || 
+                          error.message.includes("Unauthorized") ||
+                          error.message.includes("Authentifizierung");
+      
+      // Fehlermeldung als Nachricht anzeigen
+      const errorMessage: Message = {
+        type: 'assistant',
+        content: isAuthError 
+          ? "Authentifizierungsfehler: Bitte melden Sie sich erneut an und versuchen Sie es nochmal."
+          : `Bei der Verarbeitung ist ein Fehler aufgetreten: ${error.message || 'Unbekannter Fehler'}`,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+      
+      toast({
+        variant: "destructive",
+        title: isAuthError ? "Authentifizierungsfehler" : "Fehler bei der PDF-Verarbeitung",
+        description: isAuthError 
+          ? "Ihre Sitzung ist möglicherweise abgelaufen. Bitte melden Sie sich erneut an."
+          : error.message || "Bei der Verarbeitung ist ein Fehler aufgetreten."
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendQuestion();
     }
   };
 
@@ -615,7 +631,7 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
             Neuer Chat
           </Button>
           
-          {chatSessions.map((session) => (
+          {chatHistory.map((session) => (
             <Button 
               key={session.id}
               variant="ghost" 
@@ -646,12 +662,9 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
           size="sm" 
           disabled={isLoadingPdfs}
           onClick={() => {
-            console.log("🔍 Refresh-Button geklickt, refreshPdfs aufgerufen", new Date().toISOString());
             // Nur aufrufen, wenn nicht bereits lädt
             if (!isLoadingPdfs) {
               refreshPdfs();
-            } else {
-              console.log("🔍 Refresh ignoriert, da bereits ein Ladevorgang aktiv ist");
             }
           }}
           title="Liste aktualisieren"
@@ -723,7 +736,7 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
             {/* Nachrichten-Container mit festem Overflow */}
             <div 
               className="flex-1 overflow-y-auto p-4 h-full" 
-              ref={scrollAreaRef}
+              ref={messagesEndRef}
               style={{ 
                 overflowY: 'auto'
               }}
@@ -750,7 +763,6 @@ export function PdfChat({ open, onOpenChange, fullScreen = false, initialPdf }: 
             <div className="h-[70px] min-h-[70px] p-4 border-t flex items-center">
               <div className="flex gap-2 w-full">
                 <Input
-                  ref={inputRef}
                   value={inputValue}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyPress}

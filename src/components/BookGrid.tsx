@@ -137,7 +137,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         .maybeSingle();
 
       if (queryError) {
-        console.error("Fehler bei der Prüfung auf bestehendes Buch:", queryError);
         throw queryError;
       }
 
@@ -165,15 +164,12 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         
         try {
           // Rufe die createEmbeddings-Funktion mit dem authentifizierten Client auf
-          console.log("Erstelle Embedding für Buch:", newBookId);
           const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
             body: { book_id: newBookId }
           });
           
           if (embeddingError) {
             console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
-          } else {
-            console.log("Embedding erfolgreich erstellt:", embeddingData);
           }
         } catch (err) {
           console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
@@ -188,8 +184,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich hinzugefügt."
       });
     } catch (error) {
-      console.error("Error adding book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -214,15 +208,12 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       // Wenn das Embedding neu erstellt werden sollte
       if (data && data.length > 0 && (data[0] as Book).embedding === null) {
         try {
-          console.log("Erstelle Embedding für aktualisiertes Buch:", book.id);
           const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
             body: { book_id: book.id }
           });
           
           if (embeddingError) {
             console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
-          } else {
-            console.log("Embedding erfolgreich erstellt:", embeddingData);
           }
         } catch (err) {
           console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
@@ -236,8 +227,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich aktualisiert."
       });
     } catch (error) {
-      console.error("Error updating book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -267,8 +256,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich gelöscht."
       });
     } catch (error) {
-      console.error("Error deleting book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -291,8 +278,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         throw error;
       }
       
-      console.log("Verfügbare Dateien im Hauptverzeichnis:", data?.map(f => f.name) || []);
-      
       // Unterordner im Bucket finden
       const folders = data?.filter(item => item.id === null) || [];
       let allPdfs: { name: string, fullPath: string }[] = [];
@@ -308,8 +293,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
           .list(folder.name);
           
         if (!folderError && folderFiles) {
-          console.log(`Verfügbare Dateien im Ordner ${folder.name}:`, folderFiles.map(f => f.name));
-          
           // PDFs aus diesem Unterordner hinzufügen
           const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
           allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
@@ -319,8 +302,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         }
       }
       
-      console.log("Alle gefundenen PDFs:", allPdfs);
-      
       // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
       if (allPdfs.length === 0) {
         // Versuche direkt eine Datei mit der ISBN zu laden
@@ -328,33 +309,39 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         const { data: fileData } = await supabase.storage
           .from(bucketName)
           .getPublicUrl(pdfPath);
-          
+        
         if (fileData?.publicUrl) {
-          console.log("PDF direkt gefunden:", pdfPath);
           navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
           return;
         }
+      }
+
+      // Sonst zeige die Liste der gefundenen PDFs an
+      if (allPdfs.length > 0) {
+        // Suche nach einem PDF mit dem gleichen Namen wie die ISBN
+        const exactMatch = allPdfs.find(pdf => pdf.name === `${book.isbn}.pdf`);
         
-        throw new Error("Keine PDFs gefunden");
+        if (exactMatch) {
+          // Direkter Treffer mit der ISBN - öffne direkt
+          navigate(`/pdf-chat?pdf=${encodeURIComponent(exactMatch.fullPath)}`);
+          return;
+        }
+        
+        // Sonst öffne das erste PDF in der Liste
+        navigate(`/pdf-chat?pdf=${encodeURIComponent(allPdfs[0].fullPath)}`);
+        return;
       }
       
-      // Nach PDF mit der ISBN als Präfix suchen
-      const pdfNamePattern = new RegExp(`^${book.isbn}.*\\.pdf$`, 'i');
-      const matchingPdf = allPdfs.find(file => pdfNamePattern.test(file.name));
-      
-      if (!matchingPdf) {
-        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
-      }
-      
-      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
-      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.fullPath)}`);
-      
-    } catch (error: any) {
-      console.error("Fehler beim Öffnen des PDF-Chats:", error);
       toast({
         variant: "destructive",
+        title: "Kein PDF gefunden",
+        description: "Für dieses Buch wurde kein PDF gefunden."
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive", 
         title: "Fehler",
-        description: error.message || "Das PDF konnte nicht geladen werden."
+        description: "Das PDF konnte nicht geöffnet werden."
       });
     }
   };

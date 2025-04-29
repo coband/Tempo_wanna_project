@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect } from 'react';
 import { PdfChat, PdfProvider } from '@/components/books/PdfChat';
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
@@ -9,11 +10,6 @@ export default function PdfChatPage() {
   const [chatOpen, setChatOpen] = useState(true);
   const [searchParams] = useSearchParams();
   const pdfParam = searchParams.get('pdf');
-  
-  // Debug-Ausgabe
-  useEffect(() => {
-    console.log("PdfChatPage geladen mit PDF-Parameter:", pdfParam);
-  }, [pdfParam]);
 
   return (
     <ProtectedRoute>
