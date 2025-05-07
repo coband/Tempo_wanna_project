@@ -32,7 +32,7 @@ export default function Dashboard() {
         // Lade die 10 neuesten Bücher
         const { data: latestBooks } = await supabase
           .from("books")
-          .select("*")
+          .select("id, title, author, publisher, created_at, available, has_pdf, isbn")
           .order('created_at', { ascending: false })
           .limit(10);
 
@@ -95,7 +95,7 @@ export default function Dashboard() {
     // Lade die 10 neuesten Bücher neu
     const { data: latestBooks } = await supabase
       .from("books")
-      .select("*")
+      .select("id, title, author, publisher, created_at, available, has_pdf, isbn")
       .order('created_at', { ascending: false })
       .limit(10);
 

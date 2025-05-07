@@ -58,7 +58,7 @@ function BookDetails({
         // Direktes Laden aus der Datenbank mit Fokus auf Verfügbarkeit
         const { data, error } = await supabase
           .from("books")
-          .select("*")
+          .select("id, title, author, isbn, year, location, subject, level, type, publisher, description, available, borrowed_at, borrowed_by, has_pdf")
           .eq("id", initialBook.id)
           .single();
           
