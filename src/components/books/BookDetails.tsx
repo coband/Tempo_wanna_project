@@ -5,12 +5,12 @@ import { Dialog, DialogContent, DialogTitle, DialogClose, DialogDescription } fr
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useSupabase } from '@/contexts/SupabaseContext';
-import type { Book } from "@/lib/books";
+import type { FetchedBook, Book as FullBookType } from "../dashboard/BookManagement";
 import { ArrowLeft, X, ChevronLeft, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface BookDetailsProps {
-  book: Book;
+  book: FetchedBook;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBookChange?: () => void;
@@ -24,7 +24,7 @@ function BookDetails({
 }: BookDetailsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
-  const [bookData, setBookData] = useState<Book | null>(null);
+  const [bookData, setBookData] = useState<FetchedBook | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
@@ -69,7 +69,7 @@ function BookDetails({
         }
         
         if (data) {
-          setBookData(data as unknown as Book);
+          setBookData(data as unknown as FetchedBook);
         } else {
           setBookData(initialBook);
         }

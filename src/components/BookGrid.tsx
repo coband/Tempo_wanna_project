@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { useAuth } from "@/hooks/useAuth";
-import BookDetails from "./books/BookDetails.tsx";
+import BookDetails from "./books/BookDetails";
 import { Badge } from "./ui/badge";
 import {
   Tooltip,
@@ -11,7 +11,8 @@ import {
 } from "./ui/tooltip";
 import { Button } from "./ui/button";
 import { BookForm } from "./books/BookForm";
-import { Book, NewBook, BookUpdate } from "@/lib/books";
+import { FetchedBook, Book as FullBookType } from "./dashboard/BookManagement";
+import { NewBook, BookUpdate } from "@/lib/books";
 import { useSupabase } from '@/contexts/SupabaseContext';
 import { useToast } from "./ui/use-toast";
 import { BookFilter } from "./books/BookFilter";
@@ -30,7 +31,7 @@ import { Edit, Plus, Trash2, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface BookGridProps {
-  books?: Book[];
+  books?: FetchedBook[];
   onBookChange?: () => void;
 }
 
@@ -48,7 +49,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
   const supabase = useSupabase();
   const navigate = useNavigate();
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [selectedBook, setSelectedBook] = useState<FetchedBook | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -56,7 +57,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { toast } = useToast();
   
   // Filter-States
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>(books);
+  const [filteredBooks, setFilteredBooks] = useState<FetchedBook[]>(books);
   const [activeFilters, setActiveFilters] = useState<Partial<FilterValues>>({
     available: null
   });
@@ -66,15 +67,15 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     filterBooks(books, activeFilters);
   }, [books, activeFilters]);
 
-  const filterBooks = (books: Book[], filters: Partial<FilterValues>) => {
+  const filterBooks = (currentBooks: FetchedBook[], filters: Partial<FilterValues>) => {
     // If no filters are active, show all books
-    if (Object.keys(filters).length === 0) {
-      setFilteredBooks(books);
+    if (Object.keys(filters).length === 0 || currentBooks.length === 0) {
+      setFilteredBooks(currentBooks);
       return;
     }
 
     // Apply filters
-    const filtered = books.filter((book) => {
+    const filtered = currentBooks.filter((book) => {
       // For each filter category
       if (filters.level && filters.level.length > 0) {
         const bookLevels = book.level?.split(', ') || [];
@@ -127,13 +128,13 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     }));
   };
 
-  const handleAdd = async (book: NewBook) => {
+  const handleAdd = async (bookData: NewBook) => {
     try {
       // Zuerst prüfen, ob ein Buch mit dieser ISBN bereits existiert
       const { data: existingBook, error: queryError } = await supabase
         .from("books")
         .select("id, title")
-        .eq("isbn", book.isbn)
+        .eq("isbn", bookData.isbn)
         .maybeSingle();
 
       if (queryError) {
@@ -145,7 +146,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         toast({
           variant: "destructive",
           title: "Duplikat",
-          description: `Ein Buch mit der ISBN ${book.isbn} existiert bereits: "${existingBook.title}"`
+          description: `Ein Buch mit der ISBN ${bookData.isbn} existiert bereits: "${existingBook.title}"`
         });
         throw new Error(`Ein Buch mit dieser ISBN existiert bereits: ${existingBook.title}`);
       }
@@ -153,7 +154,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")
-        .insert(book)
+        .insert(bookData)
         .select();
       
       if (error) throw error;
@@ -161,6 +162,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       // Wenn ein Embedding erstellt werden soll, rufe die Edge-Funktion auf
       if (data && data.length > 0) {
         const newBookId = data[0].id;
+        const createdBook = data[0] as FullBookType;
         
         try {
           // Rufe die createEmbeddings-Funktion mit dem authentifizierten Client auf
@@ -194,29 +196,32 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     }
   };
   
-  const handleUpdate = async (book: BookUpdate) => {
+  const handleUpdate = async (bookData: BookUpdate) => {
     try {
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")
-        .update(book)
-        .eq("id", book.id)
+        .update(bookData)
+        .eq("id", bookData.id)
         .select();
       
       if (error) throw error;
       
       // Wenn das Embedding neu erstellt werden sollte
-      if (data && data.length > 0 && (data[0] as Book).embedding === null) {
-        try {
-          const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
-            body: { book_id: book.id }
-          });
-          
-          if (embeddingError) {
-            console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+      if (data && data.length > 0) {
+        const updatedBook = data[0] as FullBookType;
+        if (updatedBook.embedding === null) {
+          try {
+            const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
+              body: { book_id: bookData.id }
+            });
+            
+            if (embeddingError) {
+              console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+            }
+          } catch (err) {
+            console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
           }
-        } catch (err) {
-          console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
         }
       }
       
@@ -265,83 +270,14 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   };
 
   // Funktion zum Finden und Öffnen des PDFs
-  const openPdfChat = async (book: Book) => {
-    try {
-      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
-      
-      // Versuche zuerst, PDFs im Hauptverzeichnis des Buckets zu finden
-      let { data, error } = await supabase.storage
-        .from(bucketName)
-        .list();
-      
-      if (error) {
-        throw error;
-      }
-      
-      // Unterordner im Bucket finden
-      const folders = data?.filter(item => item.id === null) || [];
-      let allPdfs: { name: string, fullPath: string }[] = [];
-      
-      // PDFs im Hauptverzeichnis hinzufügen
-      let mainDirPdfs = data?.filter(file => file.name.toLowerCase().endsWith('.pdf')) || [];
-      allPdfs = mainDirPdfs.map(file => ({ name: file.name, fullPath: file.name }));
-      
-      // In jedem Unterordner suchen
-      for (const folder of folders) {
-        const { data: folderFiles, error: folderError } = await supabase.storage
-          .from(bucketName)
-          .list(folder.name);
-          
-        if (!folderError && folderFiles) {
-          // PDFs aus diesem Unterordner hinzufügen
-          const folderPdfs = folderFiles.filter(file => file.name.toLowerCase().endsWith('.pdf'));
-          allPdfs = [...allPdfs, ...folderPdfs.map(file => ({ 
-            name: file.name, 
-            fullPath: `${folder.name}/${file.name}` 
-          }))];
-        }
-      }
-      
-      // Falls keine Dateien gefunden wurden, versuche die PDF-Dateien direkt zu laden
-      if (allPdfs.length === 0) {
-        // Versuche direkt eine Datei mit der ISBN zu laden
-        const pdfPath = `${book.isbn}.pdf`;
-        const { data: fileData } = await supabase.storage
-          .from(bucketName)
-          .getPublicUrl(pdfPath);
-        
-        if (fileData?.publicUrl) {
-          navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
-          return;
-        }
-      }
-
-      // Sonst zeige die Liste der gefundenen PDFs an
-      if (allPdfs.length > 0) {
-        // Suche nach einem PDF mit dem gleichen Namen wie die ISBN
-        const exactMatch = allPdfs.find(pdf => pdf.name === `${book.isbn}.pdf`);
-        
-        if (exactMatch) {
-          // Direkter Treffer mit der ISBN - öffne direkt
-          navigate(`/pdf-chat?pdf=${encodeURIComponent(exactMatch.fullPath)}`);
-          return;
-        }
-        
-        // Sonst öffne das erste PDF in der Liste
-        navigate(`/pdf-chat?pdf=${encodeURIComponent(allPdfs[0].fullPath)}`);
-        return;
-      }
-      
+  const openPdfChat = async (book: FetchedBook) => {
+    if (book.has_pdf && book.id) {
+      navigate(`/chat/${book.id}`);
+    } else {
       toast({
-        variant: "destructive",
-        title: "Kein PDF gefunden",
-        description: "Für dieses Buch wurde kein PDF gefunden."
-      });
-    } catch (error) {
-      toast({
-        variant: "destructive", 
-        title: "Fehler",
-        description: "Das PDF konnte nicht geöffnet werden."
+        variant: "default",
+        title: "Kein PDF verfügbar",
+        description: "Für dieses Buch ist leider kein PDF für den Chat vorhanden."
       });
     }
   };

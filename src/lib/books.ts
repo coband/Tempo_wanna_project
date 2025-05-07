@@ -1,31 +1,10 @@
 import type { Database } from "@/types/supabase";
 import { useAuth } from "@/hooks/useAuth";
 
-export interface Book {
-  id: string;
-  title: string;
-  author: string;
-  isbn: string;
-  level: string;
-  subject: string;
-  year: number;
-  description: string;
-  location: string;
-  user_id: string;
-  created_at: string;
-  available: boolean;
-  borrowed_at: string | null;
-  borrowed_by: string | null;
-  school: string;
-  type: string;
-  publisher: string;
-  embedding: any | null;
-  vector_source: string | null;
-  has_pdf: boolean;
-}
-
+// Verwendung der generierten Typen
+export type Book = Database["public"]["Tables"]["books"]["Row"];
 export type NewBook = Database["public"]["Tables"]["books"]["Insert"];
-export type BookUpdate = Partial<Book>;
+export type BookUpdate = Database["public"]["Tables"]["books"]["Update"];
 
 /**
  * Holt ein einzelnes Buch aus der Datenbank

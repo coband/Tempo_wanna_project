@@ -21,7 +21,8 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import type { Book, NewBook } from "@/lib/books";
+import type { FetchedBook } from "../dashboard/BookManagement";
+import type { NewBook, BookUpdate } from "@/lib/books";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { fetchBookInfo } from "@/lib/api";
@@ -43,7 +44,7 @@ import { Badge } from "@/components/ui/badge";
 import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS } from "@/lib/constants";
 
 interface BookFormProps {
-  book?: Book;
+  book?: FetchedBook;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (book: NewBook) => Promise<void>;
@@ -55,7 +56,7 @@ export function BookForm({
   onOpenChange,
   onSubmit,
 }: BookFormProps) {
-  const [book, setBook] = useState<Book | null>(initialBook || null);
+  const [book, setBook] = useState<FetchedBook | null>(initialBook || null);
   const [isLoading, setIsLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoadingBookInfo, setIsLoadingBookInfo] = useState(false);

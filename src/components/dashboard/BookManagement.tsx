@@ -2,15 +2,22 @@ import React, { useState, useEffect, useCallback, ChangeEvent, useRef } from "re
 import SearchHeader from "../SearchHeader";
 import BookGrid from "../BookGrid";
 import { DashboardHeader } from "./DashboardHeader";
-import type { Book } from "@/lib/books";
+import type { Database } from "@/types/supabase";
 import { ChatButton } from "../books/ChatButton";
 import { useSupabase } from '@/contexts/SupabaseContext';
 import { useAuth } from '@/hooks/useAuth';
 import { X } from "lucide-react";
 import { toast } from "react-hot-toast";
-import LoadingScreen from "../LoadingScreen";
-import NoResults from "../NoResults";
 import { debounce } from "lodash";
+
+// Definiere den Book-Typ basierend auf dem generierten Tabellentyp
+export type Book = Database["public"]["Tables"]["books"]["Row"];
+
+// Typ für die Hauptansicht (BookGrid), lässt nur sehr große/interne Felder weg
+export type FetchedBook = Omit<Book, "embedding" | "user_id" | "vector_source">;
+
+// Typ für Suchvorschläge im Header (schlank)
+export type BookSuggestion = Pick<Book, "id" | "title" | "author" | "isbn" | "subject" | "level">;
 
 interface BookManagementProps {
   initialSearchQuery?: string;
@@ -21,6 +28,8 @@ const API_ENDPOINT = import.meta.env.VITE_SUPABASE_URL
   ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1` 
   : '';
 
+const PAGE_SIZE = 30; // Anzahl der Bücher pro Seite
+
 const BookManagement = ({
   initialSearchQuery = "",
 }: BookManagementProps) => {
@@ -28,11 +37,13 @@ const BookManagement = ({
   const { loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [displayQuery, setDisplayQuery] = useState(initialSearchQuery);
-  const [allBooks, setAllBooks] = useState<Book[]>([]);
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>([]);
+  const [allBooks, setAllBooks] = useState<FetchedBook[]>([]); // Verwende FetchedBook
+  const [filteredBooks, setFilteredBooks] = useState<FetchedBook[]>([]); // Verwende FetchedBook
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [isFiltered, setIsFiltered] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
   // Normalisierung der ISBN (entfernt Nicht-Alphanumerische Zeichen)
   const normalizeISBN = (isbn: string) => {
@@ -56,231 +67,188 @@ const BookManagement = ({
     }
   };
 
-  // Fetch books from the database
-  const fetchBooks = async (searchTerm = "") => {
+  // Fetch books from the database with pagination
+  const fetchBooks = async (currentSearchTerm = "", loadMore = false) => {
     setLoading(true);
+    setLoadingError(null);
     try {
-      let data = null;
-      let error = null;
+      const requestOffset = loadMore ? offset : 0;
 
-      // Wir prüfen, ob der Suchbegriff eine UUID ist
-      const uuidSearch = isUUID(searchTerm);
-      
-      if (searchTerm && uuidSearch) {
-        // Wenn es eine UUID ist, suchen wir direkt nach der ID
-        const result = await supabase
-          .from("books")
-          .select("*")
-          .eq("id", searchTerm);
-        
-        data = result.data;
-        error = result.error;
-        
-        // Setze displayQuery auf den Buchtitel, wenn ein Buch gefunden wurde
-        if (data && data.length > 0) {
-          setDisplayQuery(data[0].title || "Buch-ID");
-        }
-      } 
-      else if (searchTerm) {
-        // Normaler Suchbegriff, nicht UUID
-        const result = await supabase
-          .from("books")
-          .select("*")
-          .or(`title.ilike.%${searchTerm}%,author.ilike.%${searchTerm}%,isbn.ilike.%${searchTerm}%`)
-          .order('created_at', { ascending: false });
-        
-        data = result.data;
-        error = result.error;
-      } 
-      else {
-        // Keine Suche, hole alle Bücher
-        const result = await supabase
-          .from("books")
-          .select("*")
-          .order('created_at', { ascending: false });
-        
-        data = result.data;
-        error = result.error;
+      let queryBuilder = supabase.from("books");
+      // Definiere die Felder, die für die Hauptansicht (BookGrid) benötigt werden
+      const selectFields = [
+        "id", "title", "author", "isbn", "subject", "level", "year", "type", 
+        "publisher", "description", "available", "location", "school", 
+        "has_pdf", "created_at", 
+        "borrowed_at", "borrowed_by" // Hinzugefügt für BookDetails
+        // Explizit NICHT: "embedding", "user_id", "vector_source"
+      ].join(",");
+
+      let query = queryBuilder.select(selectFields);
+
+      const uuidSearch = isUUID(currentSearchTerm);
+      if (currentSearchTerm && uuidSearch) {
+        query = query.eq("id", currentSearchTerm);
+      } else if (currentSearchTerm) {
+        const searchTermProcessed = `%${currentSearchTerm.replace(/ /g, '%')}%`;
+        query = query.or(
+          `title.ilike.${searchTermProcessed},author.ilike.${searchTermProcessed},isbn.ilike.${searchTermProcessed},subject.ilike.${searchTermProcessed},description.ilike.${searchTermProcessed},level.ilike.${searchTermProcessed},type.ilike.${searchTermProcessed}`
+        );
       }
+
+      // Paginierung immer anwenden
+      query = query
+        .order("created_at", { ascending: false })
+        .range(requestOffset, requestOffset + PAGE_SIZE - 1);
+
+      const { data, error } = await query;
 
       if (error) {
         console.error("Error fetching books:", error);
         toast.error("Fehler beim Laden der Bücher");
-        return [];
+        setLoadingError("Fehler beim Laden der Bücher.");
+        setHasMore(false);
+        return;
       }
 
-      if (data) setAllBooks(data);
-      return data || [];
-    } catch (error) {
-      console.error("Error fetching books:", error);
+      if (data) {
+        const booksData = data as unknown as FetchedBook[]; 
+
+        if (loadMore) {
+          setAllBooks(prevBooks => [...prevBooks, ...booksData]);
+          // Wenn eine Suche aktiv ist und mehr geladen wird, auch filteredBooks aktualisieren
+          if (currentSearchTerm) {
+            setFilteredBooks(prevBooks => [...prevBooks, ...booksData]);
+          }
+        } else {
+          // Neue Suche oder initiales Laden (kein loadMore)
+          setAllBooks(booksData);
+          // Wenn eine Suche aktiv ist (oder auch initial), filteredBooks direkt setzen
+          setFilteredBooks(booksData);
+        }
+        
+        setOffset(requestOffset + booksData.length);
+        setHasMore(booksData.length === PAGE_SIZE);
+
+        if (currentSearchTerm && uuidSearch && booksData.length > 0 && !loadMore) {
+          setDisplayQuery(booksData[0].title || "Buch-ID");
+        }
+      } else { // Kein data
+        if (!loadMore) { // Nur leeren, wenn es keine "loadMore" Aktion war und keine Daten kamen
+          setAllBooks([]);
+          setFilteredBooks([]);
+        }
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Error fetching books:", err);
       setLoadingError('Ein Fehler ist beim Laden der Bücher aufgetreten.');
-      return [];
+      if (!loadMore) {
+        setAllBooks([]);
+        setFilteredBooks([]);
+      }
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // Füge diese Realtime-Verbindung hinzu, um bei Änderungen automatisch zu aktualisieren
+  // Neue Funktion für Suchvorschläge direkt vom Client
+  const fetchSuggestionsFromClient = async (searchTerm: string): Promise<BookSuggestion[]> => {
+    if (!searchTerm.trim() || !supabase) {
+      return [];
+    }
+    // Optional: Separaten Loading-State für Vorschläge, um UI nicht mit Haupt-Loading zu blockieren
+    // setLoadingSuggestions(true);
+    try {
+      const processedSearchTerm = `%${searchTerm.trim().replace(/ /g, "%")}%`;
+      const suggestionsLimit = 10;
+
+      // Stelle sicher, dass die selektierten Felder mit BookSuggestion übereinstimmen
+      const { data, error } = await supabase
+        .from("books")
+        .select("id, title, author, isbn, subject, level") // Diese Felder passen zu BookSuggestion
+        .or(
+          `title.ilike.${processedSearchTerm},` +
+          `author.ilike.${processedSearchTerm},` +
+          `isbn.ilike.${processedSearchTerm},` +
+          `subject.ilike.${processedSearchTerm},` +
+          `level.ilike.${processedSearchTerm}` // Entferne das letzte Komma und schließe die Klammer korrekt
+          // `type.ilike.${processedSearchTerm}` // Type wird in BookSuggestion nicht verwendet
+        )
+        .limit(suggestionsLimit);
+
+      if (error) {
+        console.error("Error fetching client-side suggestions:", error);
+        toast.error("Fehler beim Laden der Suchvorschläge.");
+        return [];
+      }
+      return (data as BookSuggestion[]) || [];
+    } catch (err) {
+      console.error("Error in fetchSuggestionsFromClient:", err);
+      toast.error("Ein Fehler ist beim Laden der Vorschläge aufgetreten.");
+      return [];
+    } finally {
+      // setLoadingSuggestions(false);
+    }
+  };
+
+  // Effect for initial load and when searchQuery changes
   useEffect(() => {
     if (authLoading) return;
-    
-    // Eine Referenz auf den aktuellen Suchzustand für den Closure
-    const currentSearchQuery = searchQuery;
-    
+
+    // Bei JEDER Änderung des Suchbegriffs (auch von non-empty zu empty oder umgekehrt)
+    // oder beim initialen Laden, die Bücher zurücksetzen und neu laden.
+    setAllBooks([]); 
+    setFilteredBooks([]); 
+    setOffset(0); // Wichtig: Offset für neue Suche/Laden zurücksetzen      
+    setHasMore(true); // Annahme, dass es mehr geben könnte   
+
+    const currentSearchQueryValue = searchQuery;
     let debounceTimer: ReturnType<typeof setTimeout>;
-    
-    // Nur laden, wenn keine UUID-Suche aktiv ist oder gar keine Suche
-    const shouldFetch = !isUUID(currentSearchQuery) || !currentSearchQuery.trim();
-    
-    if (shouldFetch) {
-      // Bücher mit Verzögerung laden, um zu häufige Anfragen bei schneller Eingabe zu vermeiden
-      debounceTimer = setTimeout(() => {
-        fetchBooks(currentSearchQuery);
-      }, currentSearchQuery ? 300 : 0); // Verzögerung nur bei Suchbegriffen
+
+    const performFetch = () => {
+      fetchBooks(currentSearchQueryValue, false); // false für loadMore, da neue Suche/initiales Laden
+    };
+
+    if (isUUID(currentSearchQueryValue)) {
+      performFetch();
+    } else {
+      debounceTimer = setTimeout(performFetch, currentSearchQueryValue ? 300 : 0);
     }
-    
+
     return () => {
-      // Aufräumen
       clearTimeout(debounceTimer);
     };
-  }, [searchQuery, authLoading]);
+  }, [searchQuery, authLoading, supabase]); // supabase dependency beibehalten
 
-  // Apply search filter
+  // useEffect für filteredBooks und isFiltered
   useEffect(() => {
-    let result = [...allBooks];
-
-    // Search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      
-      // Prüfe, ob es sich um eine UUID-Suche handelt
-      if (isUUID(query)) {
-        // Suche direkt nach der ID
-        const idMatches = result.filter(book => book.id === query);
-        if (idMatches.length > 0) {
-          return setFilteredBooks(idMatches);
-        } else {
-          // Wenn die ID direkt nicht gefunden wird, das Ergebnis leer lassen
-          return setFilteredBooks([]);
-        }
-      }
-      
-      // Hilfsfunktion zur Normalisierung von ISBN (Entfernung aller Nicht-Alphanumerischen Zeichen)
-      const normalizedQuery = normalizeISBN(query);
-      
-      // Prüfe, ob es sich um eine ISBN-Suche handeln könnte (Ziffern mit optionalen Bindestrichen)
-      const looksLikeISBN = /^[\d\-]+$/.test(query) && normalizedQuery.length >= 5;
-      
-      if (looksLikeISBN) {
-        // Spezielle ISBN-Suche
-        const isbnMatches = result.filter(book => {
-          if (!book.isbn) return false;
-          const normalizedBookISBN = normalizeISBN(book.isbn);
-          return normalizedBookISBN.includes(normalizedQuery);
-        });
-        
-        if (isbnMatches.length > 0) {
-          return setFilteredBooks(isbnMatches);
-        }
-      }
-      
-      // Erste Prüfung: Könnte es sich um einen Verlagsnamen handeln?
-      // Liste häufiger deutscher Verlage
-      const knownPublishers = ["westermann", "cornelsen", "klett", "diesterweg", "duden", "carlsen", "beltz", "raabe"];
-      const mightBePublisher = knownPublishers.some(p => query.includes(p));
-      
-      // Wenn es sich um einen bekannten Verlagsnamen handeln könnte, prüfe zuerst genau im Verlagsfeld
-      if (mightBePublisher) {
-        const publisherMatches = result.filter(book => 
-          book.publisher && book.publisher.toLowerCase().includes(query)
-        );
-        
-        // Wenn wir Treffer im Verlagsfeld haben, zeige nur diese an
-        if (publisherMatches.length > 0) {
-          return setFilteredBooks(publisherMatches);
-        }
-      }
-      
-      // Ansonsten: Normale Suche in allen Feldern
-      const matchedBooks = result.filter(book => {
-        // Für Debug-Zwecke: Prüfe jedes Feld einzeln
-        let found = false;
-        let matchField = "";
-        
-        // Spezielle Behandlung für ISBN mit Normalisierung
-        if (book.isbn) {
-          const normalizedBookISBN = normalizeISBN(book.isbn);
-          if (normalizedBookISBN.includes(normalizedQuery)) {
-            found = true;
-            matchField = "ISBN: " + book.isbn;
-          }
-        }
-        
-        // Einzelne Felder-Prüfung
-        if (!found && book.title && book.title.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Titel: " + book.title;
-        }
-        else if (!found && book.author && book.author.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Autor: " + book.author;
-        }
-        else if (!found && book.publisher && book.publisher.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Verlag: " + book.publisher;
-        }
-        else if (!found && book.description && book.description.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Beschreibung: " + book.description.substring(0, 50) + "...";
-        }
-        else if (!found && book.subject && book.subject.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Fach: " + book.subject;
-        }
-        else if (!found && book.type && book.type.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Typ: " + book.type;
-        }
-        else if (!found && book.level && book.level.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Stufe: " + book.level;
-        }
-        else if (!found && book.school && book.school.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Schule: " + book.school;
-        }
-        else if (!found && book.location && book.location.toLowerCase().includes(query)) {
-          found = true;
-          matchField = "Standort: " + book.location;
-        }
-        
-        return found;
-      });
-      
-      result = matchedBooks;
+    // Dieser useEffect wird vereinfacht. fetchBooks kümmert sich jetzt darum,
+    // filteredBooks korrekt zu setzen, wenn eine Suche aktiv ist oder nicht.
+    // Wenn searchQuery leer ist und allBooks sich ändert (z.B. durch loadMore ohne Suche),
+    // sollte filteredBooks allBooks widerspiegeln.
+    if (searchQuery.trim() === "") {
+      setFilteredBooks(allBooks);
     }
- 
-    setFilteredBooks(result);
-  }, [allBooks, searchQuery]);
+    // Wenn searchQuery nicht leer ist, hat fetchBooks bereits filteredBooks aktualisiert.
+
+    setIsFiltered(searchQuery.trim() !== "");
+  }, [allBooks, searchQuery]); // Abhängig von allBooks (für den Fall ohne Suche) und searchQuery
 
   const handleSearch = (query: string, displayTitle?: string) => {
     setSearchQuery(query);
     
-    // Wenn ein expliziter Anzeigetitel übergeben wurde, verwende diesen
     if (displayTitle) {
       setDisplayQuery(displayTitle);
-    }
-    // Ansonsten, wenn es eine UUID ist, setze einen benutzerfreundlichen Text, bis das Suchergebnis da ist
-    else if (isUUID(query)) {
+    } else if (isUUID(query)) {
       setDisplayQuery("Suche nach Buch...");
     } else {
       setDisplayQuery(query);
     }
     
-    // Wenn die Suche gelöscht/zurückgesetzt wird, lade alle Bücher neu
     if (!query.trim()) {
       setIsFiltered(false);
-      fetchBooks();
     } else {
       setIsFiltered(true);
     }
@@ -290,10 +258,17 @@ const BookManagement = ({
     setSearchQuery('');
     setDisplayQuery('');
     setIsFiltered(false);
-    fetchBooks();
   };
 
-  if (loading) {
+  const handleBookChange = () => {
+    // When a book changes (e.g., after edit/delete in BookGrid),
+    // reset pagination for the current search and reload the first page.
+    setOffset(0);
+    // setAllBooks([]); // fetchBooks with loadMore=false will replace allBooks
+    fetchBooks(searchQuery, false);
+  };
+
+  if (loading && offset === 0) { // Show main loading screen only for the very first load
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -308,9 +283,9 @@ const BookManagement = ({
       <div className="flex flex-col">
         <SearchHeader
           onSearch={handleSearch}
-          books={filteredBooks}
-          allBooks={allBooks}
-          isLoading={loading}
+          books={filteredBooks as any[]} // TODO: Pass BookSuggestion[] ? Check SearchHeader props
+          onFetchSuggestions={fetchSuggestionsFromClient}
+          isLoading={loading} // Haupt-Loading-State, ggf. separaten für Suggestions
           currentQuery={displayQuery}
         />
 
@@ -318,6 +293,7 @@ const BookManagement = ({
         {isFiltered && (
           <div className="bg-blue-50 px-4 py-2 flex items-center justify-between">
             <div className="text-sm text-blue-700">
+              {/* Adjust length check if filteredBooks holds FetchedBook */} 
               {filteredBooks.length === 1 
                 ? "1 Buch gefunden für" 
                 : `${filteredBooks.length} Bücher gefunden für`}: "{displayQuery}"
@@ -341,9 +317,30 @@ const BookManagement = ({
               </div>
             )}
             <BookGrid
-              books={filteredBooks}
-              onBookChange={fetchBooks}
+              books={filteredBooks} // filteredBooks ist jetzt FetchedBook[], BookGrid muss angepasst werden
+              onBookChange={handleBookChange}
             />
+            {!loading && filteredBooks.length === 0 && !loadingError && displayQuery && (
+               <div className="text-center p-8 text-gray-500">
+                 Keine Bücher für "{displayQuery}" gefunden.
+               </div>
+            )}
+            {!loading && filteredBooks.length === 0 && !loadingError && !displayQuery && (
+              <div className="text-center p-8 text-gray-500">
+                Keine Bücher vorhanden.
+              </div>
+            )}
+            {hasMore && !loading && (
+              <div className="flex justify-center my-6">
+                <button
+                  onClick={() => fetchBooks(searchQuery, true)}
+                  className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition ease-in-out duration-150"
+                  disabled={loading}
+                >
+                  {loading ? "Lädt..." : "Weitere Bücher laden"}
+                </button>
+              </div>
+            )}
           </div>
         </main>
 

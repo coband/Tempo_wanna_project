@@ -16,12 +16,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "./ui/tooltip";
+import { debounce } from "lodash";
+
+// Übernehme den BookSuggestion Typ oder definiere ihn hier, falls er nicht global verfügbar ist
+// Annahme: BookSuggestion ist global oder wird hier importiert/definiert
+// import type { BookSuggestion } from "../BookManagement"; // Beispielhafter Import
+// Minimaldefinition für hier, falls nicht anders importiert:
+export type BookSuggestion = { id: string; title: string; author?: string; isbn?: string; [key: string]: any };
 
 interface SearchHeaderProps {
   className?: string;
   onSearch?: (query: string, displayTitle?: string) => void;
-  books?: any[];
-  allBooks?: any[];  // Alle verfügbaren Bücher für die Live-Suche
+  books?: BookSuggestion[]; // books wird für Fallback oder Anzeige der ausgewählten Suche verwendet
+  // allBooks?: any[]; // Nicht mehr für Vorschläge verwendet
+  onFetchSuggestions?: (searchTerm: string) => Promise<BookSuggestion[]>; // Neue Prop
   isLoading?: boolean;
   currentQuery?: string;
   isMobile?: boolean;
@@ -30,14 +38,18 @@ interface SearchHeaderProps {
 const SearchHeader = ({
   className = "",
   onSearch = () => {},
-  books = [],
-  allBooks = [],  // Standardwert für allBooks
+  books = [], // books kann weiterhin nützlich sein, z.B. für initialen Zustand oder Fallback
+  // allBooks = [], // Nicht mehr benötigt
+  onFetchSuggestions,
   isLoading = false,
   currentQuery = "",
   isMobile = false,
 }: SearchHeaderProps) => {
   const [searchQuery, setSearchQuery] = useState(currentQuery);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [suggestionItems, setSuggestionItems] = useState<BookSuggestion[]>([]);
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [isMobileView, setIsMobileView] = useState(isMobile);
@@ -87,73 +99,54 @@ const SearchHeader = ({
     return isbn.replace(/[^0-9a-zA-Z]/g, '');
   };
 
+  // Debounced function to fetch suggestions
+  const debouncedFetchSuggestions = useRef(
+    debounce(async (query: string) => {
+      if (query.trim() && onFetchSuggestions) {
+        try {
+          const suggestions = await onFetchSuggestions(query);
+          setSuggestionItems(suggestions);
+        } catch (error) {
+          console.error("Failed to fetch suggestions:", error);
+          setSuggestionItems([]); // Bei Fehler leeren
+        }
+      } else {
+        setSuggestionItems([]); // Leeren, wenn Query leer ist
+      }
+    }, 300) // 300ms debounce
+  ).current;
+
   // Filter books for the dropdown based on input value
   const filteredSuggestions = useMemo(() => {
-    // Verwende allBooks statt books für Vorschläge in der Live-Suche
-    const sourceBooks = allBooks.length > 0 ? allBooks : books;
+    // Verwende suggestionItems als primäre Quelle
+    const sourceBooks = suggestionItems.length > 0 ? suggestionItems : []; 
+    // Die alte Logik mit `allBooks` oder `books` wird hier nicht mehr direkt für die Vorschlagsgenerierung verwendet,
+    // da die Vorschläge jetzt vom Backend kommen. Man könnte hier noch client-seitig auf den `suggestionItems` filtern/sortieren,
+    // falls das Backend nicht schon perfekt sortierte Ergebnisse liefert oder spezielle Hervorhebungen gewünscht sind.
+    // Fürs Erste geben wir die suggestionItems direkt oder leicht gefiltert zurück.
+
+    if (!searchQuery.trim()) return []; // Keine Vorschläge bei leerer Suche
     
-    if (!searchQuery.trim()) return sourceBooks;
-    
-    const query = searchQuery.toLowerCase().trim();
-    const normalizedQuery = normalizeISBN(query);
-    
-    // Check if it might be an ISBN (digits with optional dashes)
-    const looksLikeISBN = /^[\d\-]+$/.test(query) && normalizedQuery.length >= 5;
-    
-    if (looksLikeISBN) {
-      // Suche nach ISBN mit oder ohne Bindestriche
-      const isbnMatches = sourceBooks.filter(book => {
-        if (!book.isbn) return false;
-        const normalizedBookISBN = normalizeISBN(book.isbn);
-        return normalizedBookISBN.includes(normalizedQuery);
-      });
-      
-      if (isbnMatches.length > 0) {
-        console.log(`ISBN-Suche: ${isbnMatches.length} Bücher gefunden für "${query}"`);
-        return isbnMatches;
-      }
-    }
-    
-    // Check if it might be a publisher search
-    const knownPublishers = ["westermann", "cornelsen", "klett", "diesterweg", "duden", "carlsen", "beltz", "raabe"];
-    const mightBePublisher = knownPublishers.some(p => query.includes(p));
-    
-    // If it looks like a publisher, prioritize publisher matches
-    if (mightBePublisher) {
-      const publisherMatches = sourceBooks.filter(book => 
-        book.publisher && book.publisher.toLowerCase().includes(query)
-      );
-      
-      if (publisherMatches.length > 0) {
-        console.log(`Dropdown zeigt ${publisherMatches.length} Bücher vom Verlag mit "${query}"`);
-        return publisherMatches;
-      }
-    }
-    
-    // Otherwise do normal filtering for title, author, etc.
+    // Wenn suggestionItems vorhanden sind, diese verwenden.
+    // Die komplexe Filterlogik (ISBN, Verlag) kann hier ggf. entfallen oder angepasst werden,
+    // je nachdem, was das Backend liefert.
+    // Für dieses Beispiel geben wir suggestionItems zurück, wenn searchQuery gesetzt ist und Vorschläge da sind.
+    // Eine einfache Filterung könnte sein, sicherzustellen, dass die Vorschläge noch zum aktuellen searchQuery passen,
+    // falls das Debouncing und die Backend-Antwort nicht perfekt synchron sind.
     return sourceBooks.filter(book => {
-      // Spezielle Behandlung für ISBN, falls es eine teilweise ISBN-Übereinstimmung geben könnte
+      const query = searchQuery.toLowerCase().trim();
+      const normalizedQuery = normalizeISBN(query);
+
+      // Grundlegende Prüfung, ob Titel, Autor oder ISBN passen
+      if (book.title && book.title.toLowerCase().includes(query)) return true;
+      if (book.author && book.author.toLowerCase().includes(query)) return true;
       if (book.isbn) {
         const normalizedBookISBN = normalizeISBN(book.isbn);
-        if (normalizedBookISBN.includes(normalizedQuery)) {
-          return true;
-        }
+        if (normalizedBookISBN.includes(normalizedQuery)) return true;
       }
-      
-      const searchableFields = [
-        book.title,
-        book.author,
-        book.publisher,
-        book.subject,
-        book.level,
-        book.type
-      ]
-      .filter(Boolean)
-      .map(field => field.toLowerCase());
-      
-      return searchableFields.some(field => field.includes(query));
+      return false;
     });
-  }, [books, allBooks, searchQuery]);
+  }, [suggestionItems, searchQuery]);
 
   const handleSearch = () => {
     // Nur suchen, wenn es einen Suchbegriff gibt
@@ -174,6 +167,14 @@ const SearchHeader = ({
     const value = e.target.value;
     setSearchQuery(value);
     setIsDropdownOpen(value.trim().length > 0);
+    if (value.trim().length > 0) {
+      setIsFetchingSuggestions(true);
+      debouncedFetchSuggestions(value);
+    } else {
+      setSuggestionItems([]); // Leeren, wenn Suchfeld geleert wird
+      setIsFetchingSuggestions(false);
+      setIsDropdownOpen(false);
+    }
   };
 
   // Handler für das Keydown-Event im Suchfeld
@@ -267,7 +268,13 @@ const SearchHeader = ({
             >
               <Command className="rounded-lg border shadow-md">
                 <CommandList>
-                  {filteredSuggestions.length === 0 ? (
+                  {isFetchingSuggestions ? (
+                    <CommandEmpty>
+                      <div className="py-6 text-center text-sm text-gray-500">
+                        Lädt Vorschläge...
+                      </div>
+                    </CommandEmpty>
+                  ) : filteredSuggestions.length === 0 ? (
                     <CommandEmpty>
                       <div className="py-6 text-center">
                         <p>Keine Ergebnisse gefunden.</p>
