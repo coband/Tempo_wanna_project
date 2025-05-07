@@ -156,7 +156,7 @@ serve(async (req) => {
         // Hole vollständige Daten für diese Bücher
         const { data: fullBooks, error: fullBooksError } = await supabase
           .from('books')
-          .select('*')
+          .select('id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by')
           .in('id', bookIds);
           
         if (fullBooksError) {
@@ -402,10 +402,10 @@ async function performKeywordSearch(supabase, query) {
   // Zusammenführen der Bedingungen mit OR
   const searchQuery = searchConditions.join(' OR ');
   
-  // Supabase-Abfrage mit OR-Filter
+  // Supabase-Abfrage mit OR-Filter und spezifischen Feldern statt *
   return await supabase
     .from('books')
-    .select('*')
+    .select('id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by')
     .or(searchQuery)
     .limit(20);
 }

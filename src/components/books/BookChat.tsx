@@ -408,7 +408,7 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       // Lade vollständige Buchinformationen
       const { data: bookData, error } = await supabase
         .from('books')
-        .select('*')
+        .select('id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by')
         .eq('id', searchBook.id)
         .single();
       
