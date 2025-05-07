@@ -15,8 +15,6 @@ import { FetchedBook, Book as FullBookType } from "./dashboard/BookManagement";
 import { NewBook, BookUpdate } from "@/lib/books";
 import { useSupabase } from '@/contexts/SupabaseContext';
 import { useToast } from "./ui/use-toast";
-import { BookFilter } from "./books/BookFilter";
-import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS, LOCATIONS, YEAR_RANGE } from "@/lib/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +33,6 @@ interface BookGridProps {
   onBookChange?: () => void;
 }
 
-interface FilterValues {
-  level: string[];
-  school: string;
-  type: string;
-  subject: string[];
-  year: [number, number];
-  available: boolean | null;
-  location: string;
-}
-
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
   const supabase = useSupabase();
@@ -56,78 +44,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const { toast } = useToast();
   
-  // Filter-States
-  const [filteredBooks, setFilteredBooks] = useState<FetchedBook[]>(books);
-  const [activeFilters, setActiveFilters] = useState<Partial<FilterValues>>({
-    available: null
-  });
-
-  // Filter books when books array or filters change
-  useEffect(() => {
-    filterBooks(books, activeFilters);
-  }, [books, activeFilters]);
-
-  const filterBooks = (currentBooks: FetchedBook[], filters: Partial<FilterValues>) => {
-    // If no filters are active, show all books
-    if (Object.keys(filters).length === 0 || currentBooks.length === 0) {
-      setFilteredBooks(currentBooks);
-      return;
-    }
-
-    // Apply filters
-    const filtered = currentBooks.filter((book) => {
-      // For each filter category
-      if (filters.level && filters.level.length > 0) {
-        const bookLevels = book.level?.split(', ') || [];
-        if (!filters.level.some(level => bookLevels.includes(level))) {
-          return false;
-        }
-      }
-
-      if (filters.school && book.school !== filters.school) {
-        return false;
-      }
-
-      if (filters.type && book.type !== filters.type) {
-        return false;
-      }
-
-      if (filters.subject && filters.subject.length > 0) {
-        if (!filters.subject.includes(book.subject)) {
-          return false;
-        }
-      }
-
-      if (filters.year) {
-        const [min, max] = filters.year;
-        if (book.year < min || book.year > max) {
-          return false;
-        }
-      }
-
-      if (filters.available !== null && filters.available !== undefined) {
-        if (book.available !== filters.available) {
-          return false;
-        }
-      }
-
-      if (filters.location && book.location !== filters.location) {
-        return false;
-      }
-
-      return true;
-    });
-
-    setFilteredBooks(filtered);
-  };
-
-  const handleFilterChange = (category: keyof FilterValues, value: any) => {
-    setActiveFilters((prev) => ({
-      ...prev,
-      [category]: value
-    }));
-  };
-
   const handleAdd = async (bookData: NewBook) => {
     try {
       // Zuerst prüfen, ob ein Buch mit dieser ISBN bereits existiert
@@ -284,38 +200,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
 
   return (
     <div className="p-4">
-      {/* Filter-Abschnitt */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Filter</h2>
-        <BookFilter
-          levels={LEVELS}
-          schools={SCHOOLS}
-          types={BOOK_TYPES}
-          subjects={SUBJECTS}
-          yearRange={YEAR_RANGE}
-          locations={LOCATIONS}
-          selectedLevels={activeFilters.level || []}
-          selectedSchool={activeFilters.school || ""}
-          selectedType={activeFilters.type || ""}
-          selectedSubjects={activeFilters.subject || []}
-          selectedYearRange={activeFilters.year || YEAR_RANGE}
-          selectedAvailability={activeFilters.available}
-          selectedLocation={activeFilters.location || ""}
-          onLevelChange={(values) => handleFilterChange("level", values)}
-          onSchoolChange={(value) => handleFilterChange("school", value)}
-          onTypeChange={(value) => handleFilterChange("type", value)}
-          onSubjectChange={(values) => handleFilterChange("subject", values)}
-          onYearRangeChange={(values) => handleFilterChange("year", values)}
-          onAvailabilityChange={(value) => handleFilterChange("available", value)}
-          onLocationChange={(value) => handleFilterChange("location", value)}
-          onClearFilters={() => {
-            setActiveFilters({
-              available: null
-            });
-          }}
-        />
-      </div>
-
       {/* Add Button für Admins */}
       {isAdmin && (
         <div className="mb-6">
@@ -334,8 +218,8 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
 
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {Array.isArray(filteredBooks) && filteredBooks.length > 0 ? (
-          filteredBooks.map((book) => (
+        {Array.isArray(books) && books.length > 0 ? (
+          books.map((book) => (
             <Card
               key={book.id}
               className="overflow-hidden transition-all duration-200 hover:shadow-sm flex flex-col cursor-pointer"

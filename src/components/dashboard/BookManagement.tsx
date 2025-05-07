@@ -9,6 +9,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { X } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { debounce } from "lodash";
+import {
+  LEVELS, LOCATIONS, SCHOOLS, SUBJECTS, BOOK_TYPES,
+  YEAR_RANGE,
+} from "@/lib/constants";
+import { BookFilter } from '../books/BookFilter';
 
 // Definiere den Book-Typ basierend auf dem generierten Tabellentyp
 export type Book = Database["public"]["Tables"]["books"]["Row"];
@@ -30,6 +35,16 @@ const API_ENDPOINT = import.meta.env.VITE_SUPABASE_URL
 
 const PAGE_SIZE = 30; // Anzahl der Bücher pro Seite
 
+interface ActiveFilters {
+  levels: string[];
+  school: string;
+  type: string;
+  subjects: string[];
+  yearRange: [number, number];
+  availability: boolean | null;
+  location: string;
+}
+
 const BookManagement = ({
   initialSearchQuery = "",
 }: BookManagementProps) => {
@@ -37,55 +52,51 @@ const BookManagement = ({
   const { loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [displayQuery, setDisplayQuery] = useState(initialSearchQuery);
-  const [allBooks, setAllBooks] = useState<FetchedBook[]>([]); // Verwende FetchedBook
-  const [filteredBooks, setFilteredBooks] = useState<FetchedBook[]>([]); // Verwende FetchedBook
+  const [allBooks, setAllBooks] = useState<FetchedBook[]>([]);
+  const [filteredBooks, setFilteredBooks] = useState<FetchedBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingError, setLoadingError] = useState<string | null>(null);
-  const [isFiltered, setIsFiltered] = useState(false);
+  // isFilteredState wird später basierend auf searchQuery ODER aktiven Filtern gesetzt
+  const [isFilteredState, setIsFilteredState] = useState(false); 
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
 
-  // Normalisierung der ISBN (entfernt Nicht-Alphanumerische Zeichen)
-  const normalizeISBN = (isbn: string) => {
-    return isbn.replace(/[^a-zA-Z0-9]/g, '');
-  };
+  console.log("BookManagement RENDER - hasMore:", hasMore, "loading:", loading, "offset:", offset); // Log bei jedem Render
 
-  // Hilfsfunktion zur Prüfung, ob ein String eine UUID ist
-  const isUUID = (str: string): boolean => {
-    return !!str.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-  };
+  // Filter States
+  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<string>("");
+  const [selectedType, setSelectedType] = useState<string>("");
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+  const [selectedYearRange, setSelectedYearRange] = useState<[number, number]>([YEAR_RANGE[0], YEAR_RANGE[1]]);
+  const [selectedAvailability, setSelectedAvailability] = useState<boolean | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string>("");
 
-  // Helper-Funktion für Anfragen mit Fehlerbehandlung
-  const handleRequest = async <T,>(
-    requestFn: () => Promise<{ data: T | null; error: any }>
-  ): Promise<{ data: T | null; error: any }> => {
-    try {
-      return await requestFn();
-    } catch (error) {
-      console.error("Fehler bei der Anfrage:", error);
-      return { data: null, error };
-    }
-  };
+  const getCurrentFilters = (): ActiveFilters => ({
+    levels: selectedLevels,
+    school: selectedSchool,
+    type: selectedType,
+    subjects: selectedSubjects,
+    yearRange: selectedYearRange,
+    availability: selectedAvailability,
+    location: selectedLocation,
+  });
+  
+  const normalizeISBN = (isbn: string) => isbn.replace(/[^a-zA-Z0-9]/g, '');
+  const isUUID = (str: string): boolean => !!str.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
-  // Fetch books from the database with pagination
-  const fetchBooks = async (currentSearchTerm = "", loadMore = false) => {
+  const fetchBooks = async (currentSearchTerm = "", loadMore = false, filters: ActiveFilters) => {
+    console.log(`fetchBooks CALLED - searchTerm: '${currentSearchTerm}', loadMore: ${loadMore}, offset_before_request: ${offset}`, filters);
     setLoading(true);
     setLoadingError(null);
     try {
       const requestOffset = loadMore ? offset : 0;
 
       let queryBuilder = supabase.from("books");
-      // Definiere die Felder, die für die Hauptansicht (BookGrid) benötigt werden
-      const selectFields = [
-        "id", "title", "author", "isbn", "subject", "level", "year", "type", 
-        "publisher", "description", "available", "location", "school", 
-        "has_pdf", "created_at", 
-        "borrowed_at", "borrowed_by" // Hinzugefügt für BookDetails
-        // Explizit NICHT: "embedding", "user_id", "vector_source"
-      ].join(",");
-
+      const selectFields = "id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by";
       let query = queryBuilder.select(selectFields);
 
+      // Suchbegriff-Filterung
       const uuidSearch = isUUID(currentSearchTerm);
       if (currentSearchTerm && uuidSearch) {
         query = query.eq("id", currentSearchTerm);
@@ -96,7 +107,30 @@ const BookManagement = ({
         );
       }
 
-      // Paginierung immer anwenden
+      // Filter anwenden
+      if (filters.levels.length > 0) {
+        query = query.in("level", filters.levels);
+      }
+      if (filters.school && filters.school !== "Alle") {
+        query = query.ilike("school", filters.school);
+      }
+      if (filters.type && filters.type !== "Alle Typen") {
+        query = query.ilike("type", filters.type);
+      }
+      if (filters.subjects.length > 0) {
+        query = query.in("subject", filters.subjects);
+      }
+      if (filters.yearRange[0] !== YEAR_RANGE[0] || filters.yearRange[1] !== YEAR_RANGE[1]) {
+        query = query.gte("year", filters.yearRange[0]);
+        query = query.lte("year", filters.yearRange[1]);
+      }
+      if (filters.availability !== null) {
+        query = query.eq("available", filters.availability);
+      }
+      if (filters.location && filters.location !== "Alle Standorte") {
+        query = query.ilike("location", filters.location);
+      }
+
       query = query
         .order("created_at", { ascending: false })
         .range(requestOffset, requestOffset + PAGE_SIZE - 1);
@@ -112,31 +146,33 @@ const BookManagement = ({
       }
 
       if (data) {
-        const booksData = data as unknown as FetchedBook[]; 
+        const booksData = data as unknown as FetchedBook[];
+        console.log(`fetchBooks SUCCESS - Received ${booksData.length} books. PAGE_SIZE: ${PAGE_SIZE}. Current offset: ${offset}, Request offset: ${requestOffset}`);
 
         if (loadMore) {
           setAllBooks(prevBooks => [...prevBooks, ...booksData]);
-          // Wenn eine Suche aktiv ist und mehr geladen wird, auch filteredBooks aktualisieren
-          if (currentSearchTerm) {
-            setFilteredBooks(prevBooks => [...prevBooks, ...booksData]);
-          }
+          setFilteredBooks(prevBooks => [...prevBooks, ...booksData]);
         } else {
-          // Neue Suche oder initiales Laden (kein loadMore)
           setAllBooks(booksData);
-          // Wenn eine Suche aktiv ist (oder auch initial), filteredBooks direkt setzen
           setFilteredBooks(booksData);
         }
         
-        setOffset(requestOffset + booksData.length);
-        setHasMore(booksData.length === PAGE_SIZE);
+        const newOffset = requestOffset + booksData.length;
+        setOffset(newOffset);
+        
+        const newHasMore = booksData.length === PAGE_SIZE;
+        console.log(`fetchBooks - booksData.length (${booksData.length}) === PAGE_SIZE (${PAGE_SIZE}) is ${newHasMore}. Setting hasMore to ${newHasMore}. New offset will be ${newOffset}`);
+        setHasMore(newHasMore);
 
-        if (currentSearchTerm && uuidSearch && booksData.length > 0 && !loadMore) {
+        if (currentSearchTerm && isUUID(currentSearchTerm) && booksData.length > 0 && !loadMore) {
           setDisplayQuery(booksData[0].title || "Buch-ID");
         }
-      } else { // Kein data
-        if (!loadMore) { // Nur leeren, wenn es keine "loadMore" Aktion war und keine Daten kamen
+      } else {
+        console.log(`fetchBooks NO DATA - loadMore: ${loadMore}. Setting hasMore to false.`);
+        if (!loadMore) {
           setAllBooks([]);
           setFilteredBooks([]);
+          setOffset(0); // Reset offset if initial load yields no data
         }
         setHasMore(false);
       }
@@ -146,38 +182,25 @@ const BookManagement = ({
       if (!loadMore) {
         setAllBooks([]);
         setFilteredBooks([]);
+        setOffset(0); // Reset offset on error for initial load
       }
-      setHasMore(false);
+      setHasMore(false); // Sicherstellen, dass bei Fehler nicht mehr geladen werden kann
+      console.log("fetchBooks ERROR - Setting hasMore to false.", err);
     } finally {
       setLoading(false);
+      console.log("fetchBooks FINALLY - loading set to false.");
     }
   };
 
-  // Neue Funktion für Suchvorschläge direkt vom Client
   const fetchSuggestionsFromClient = async (searchTerm: string): Promise<BookSuggestion[]> => {
-    if (!searchTerm.trim() || !supabase) {
-      return [];
-    }
-    // Optional: Separaten Loading-State für Vorschläge, um UI nicht mit Haupt-Loading zu blockieren
-    // setLoadingSuggestions(true);
+    if (!searchTerm.trim() || !supabase) return [];
     try {
       const processedSearchTerm = `%${searchTerm.trim().replace(/ /g, "%")}%`;
-      const suggestionsLimit = 10;
-
-      // Stelle sicher, dass die selektierten Felder mit BookSuggestion übereinstimmen
       const { data, error } = await supabase
         .from("books")
-        .select("id, title, author, isbn, subject, level") // Diese Felder passen zu BookSuggestion
-        .or(
-          `title.ilike.${processedSearchTerm},` +
-          `author.ilike.${processedSearchTerm},` +
-          `isbn.ilike.${processedSearchTerm},` +
-          `subject.ilike.${processedSearchTerm},` +
-          `level.ilike.${processedSearchTerm}` // Entferne das letzte Komma und schließe die Klammer korrekt
-          // `type.ilike.${processedSearchTerm}` // Type wird in BookSuggestion nicht verwendet
-        )
-        .limit(suggestionsLimit);
-
+        .select("id, title, author, isbn, subject, level")
+        .or(`title.ilike.${processedSearchTerm},author.ilike.${processedSearchTerm},isbn.ilike.${processedSearchTerm},subject.ilike.${processedSearchTerm},level.ilike.${processedSearchTerm}`)
+        .limit(10);
       if (error) {
         console.error("Error fetching client-side suggestions:", error);
         toast.error("Fehler beim Laden der Suchvorschläge.");
@@ -188,57 +211,62 @@ const BookManagement = ({
       console.error("Error in fetchSuggestionsFromClient:", err);
       toast.error("Ein Fehler ist beim Laden der Vorschläge aufgetreten.");
       return [];
-    } finally {
-      // setLoadingSuggestions(false);
     }
   };
-
-  // Effect for initial load and when searchQuery changes
+  
+  // useEffect für initiales Laden und Änderungen an searchQuery ODER Filtern
   useEffect(() => {
     if (authLoading) return;
+    
+    console.log("BookManagement EFFECT (search/filter change) - searchQuery:", searchQuery, "selectedType:", selectedType, "Resetting offset to 0 and hasMore to true.");
+    setOffset(0); 
+    setHasMore(true); // Optimistically set to true
 
-    // Bei JEDER Änderung des Suchbegriffs (auch von non-empty zu empty oder umgekehrt)
-    // oder beim initialen Laden, die Bücher zurücksetzen und neu laden.
-    setAllBooks([]); 
-    setFilteredBooks([]); 
-    setOffset(0); // Wichtig: Offset für neue Suche/Laden zurücksetzen      
-    setHasMore(true); // Annahme, dass es mehr geben könnte   
-
-    const currentSearchQueryValue = searchQuery;
-    let debounceTimer: ReturnType<typeof setTimeout>;
-
+    const currentFilters = getCurrentFilters();
     const performFetch = () => {
-      fetchBooks(currentSearchQueryValue, false); // false für loadMore, da neue Suche/initiales Laden
+      fetchBooks(searchQuery, false, currentFilters);
     };
 
-    if (isUUID(currentSearchQueryValue)) {
-      performFetch();
-    } else {
-      debounceTimer = setTimeout(performFetch, currentSearchQueryValue ? 300 : 0);
-    }
+    // Debounce nur für textuelle Suche, nicht für Filter-Änderungen direkt
+    // Filteränderungen lösen fetchBooks direkt in ihren Handlern aus (siehe unten)
+    // Dieser useEffect reagiert primär auf searchQuery Änderungen
+    const debounceTimer = setTimeout(performFetch, searchQuery ? 300 : 0);
 
     return () => {
       clearTimeout(debounceTimer);
     };
-  }, [searchQuery, authLoading, supabase]); // supabase dependency beibehalten
+  }, [searchQuery, authLoading, supabase, selectedLevels, selectedSchool, selectedType, selectedSubjects, selectedYearRange, selectedAvailability, selectedLocation]);
 
-  // useEffect für filteredBooks und isFiltered
+
+  // Update isFilteredState based on searchQuery or any active filter
   useEffect(() => {
-    // Dieser useEffect wird vereinfacht. fetchBooks kümmert sich jetzt darum,
-    // filteredBooks korrekt zu setzen, wenn eine Suche aktiv ist oder nicht.
-    // Wenn searchQuery leer ist und allBooks sich ändert (z.B. durch loadMore ohne Suche),
-    // sollte filteredBooks allBooks widerspiegeln.
-    if (searchQuery.trim() === "") {
-      setFilteredBooks(allBooks);
-    }
-    // Wenn searchQuery nicht leer ist, hat fetchBooks bereits filteredBooks aktualisiert.
+    const filters = getCurrentFilters();
+    const hasActiveSearch = searchQuery.trim() !== "";
+    const hasActiveFilters =
+      filters.levels.length > 0 ||
+      (filters.school && filters.school !== "Alle") ||
+      (filters.type && filters.type !== "Alle Typen") ||
+      filters.subjects.length > 0 ||
+      (filters.yearRange[0] !== YEAR_RANGE[0] || filters.yearRange[1] !== YEAR_RANGE[1]) ||
+      filters.availability !== null ||
+      (filters.location && filters.location !== "Alle Standorte");
 
-    setIsFiltered(searchQuery.trim() !== "");
-  }, [allBooks, searchQuery]); // Abhängig von allBooks (für den Fall ohne Suche) und searchQuery
+    console.log("BookManagement EFFECT (isFilteredState) - hasActiveSearch:", hasActiveSearch, "hasActiveFilters:", hasActiveFilters);
+    setIsFilteredState(hasActiveSearch || hasActiveFilters);
+
+    // Wenn nur Filter aktiv sind und kein Suchbegriff, setze displayQuery entsprechend
+    if (hasActiveFilters && !hasActiveSearch) {
+      setDisplayQuery("Aktive Filter"); 
+    } else if (!hasActiveFilters && !hasActiveSearch) {
+      setDisplayQuery(""); // Kein Suchbegriff, keine Filter
+    }
+    // Sonst bleibt displayQuery vom Suchbegriff bestimmt (handleSearch)
+
+  }, [searchQuery, selectedLevels, selectedSchool, selectedType, selectedSubjects, selectedYearRange, selectedAvailability, selectedLocation]);
+
 
   const handleSearch = (query: string, displayTitle?: string) => {
     setSearchQuery(query);
-    
     if (displayTitle) {
       setDisplayQuery(displayTitle);
     } else if (isUUID(query)) {
@@ -246,32 +274,71 @@ const BookManagement = ({
     } else {
       setDisplayQuery(query);
     }
-    
-    if (!query.trim()) {
-      setIsFiltered(false);
-    } else {
-      setIsFiltered(true);
-    }
   };
 
-  const resetSearch = () => {
+  const resetSearchAndFilters = () => {
     setSearchQuery('');
     setDisplayQuery('');
-    setIsFiltered(false);
+    // Reset filter states
+    setSelectedLevels([]);
+    setSelectedSchool("");
+    setSelectedType("");
+    setSelectedSubjects([]);
+    setSelectedYearRange([YEAR_RANGE[0], YEAR_RANGE[1]]);
+    setSelectedAvailability(null);
+    setSelectedLocation("");
+    // setIsFilteredState(false); // Wird durch useEffect oben aktualisiert
+    // fetchBooks wird durch den useEffect oben getriggert, da sich Filter geändert haben
   };
 
   const handleBookChange = () => {
-    // When a book changes (e.g., after edit/delete in BookGrid),
-    // reset pagination for the current search and reload the first page.
     setOffset(0);
-    // setAllBooks([]); // fetchBooks with loadMore=false will replace allBooks
-    fetchBooks(searchQuery, false);
+    fetchBooks(searchQuery, false, getCurrentFilters());
   };
 
-  if (loading && offset === 0) { // Show main loading screen only for the very first load
+  // Filter Handler Funktionen
+  const handleLevelChange = (levels: string[]) => { setSelectedLevels(levels); };
+  const handleSchoolChange = (school: string) => { setSelectedSchool(school); };
+  const handleTypeChange = (type: string) => { setSelectedType(type); };
+  const handleSubjectChange = (subjects: string[]) => { setSelectedSubjects(subjects); };
+  const handleYearRangeChange = (range: [number, number]) => { setSelectedYearRange(range); };
+  const handleAvailabilityChange = (available: boolean | null) => { setSelectedAvailability(available); };
+  const handleLocationChange = (location: string) => { setSelectedLocation(location); };
+  
+  // Im Hooks-Bereich
+  // Stellen sicher, dass alle Filterwerte initialisiert sind
+  useEffect(() => {
+    if (initialSearchQuery) {
+      setSearchQuery(initialSearchQuery);
+      setDisplayQuery(initialSearchQuery);
+    }
+    setHasMore(true);
+    
+    // Wenn keine Initialisierungsdaten mitgegeben wurden, lade die Standarddaten
+    if (!initialSearchQuery) {
+      fetchBooks("", false, {
+        levels: [],
+        school: "",
+        type: "",
+        subjects: [],
+        yearRange: YEAR_RANGE,
+        availability: null,
+        location: ""
+      });
+    }
+  }, [supabase, initialSearchQuery, authLoading]);
+
+  if (loading && offset === 0 && !authLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+  if (authLoading) {
+     return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Authentifizierung wird geladen...</p>
       </div>
     );
   }
@@ -279,36 +346,38 @@ const BookManagement = ({
   return (
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader />
-
       <div className="flex flex-col">
         <SearchHeader
           onSearch={handleSearch}
-          books={filteredBooks as any[]} // TODO: Pass BookSuggestion[] ? Check SearchHeader props
           onFetchSuggestions={fetchSuggestionsFromClient}
-          isLoading={loading} // Haupt-Loading-State, ggf. separaten für Suggestions
+          isLoading={loading && searchQuery.trim().length > 0}
           currentQuery={displayQuery}
         />
 
-        {/* Filter-Indikator */}
-        {isFiltered && (
-          <div className="bg-blue-50 px-4 py-2 flex items-center justify-between">
-            <div className="text-sm text-blue-700">
-              {/* Adjust length check if filteredBooks holds FetchedBook */} 
-              {filteredBooks.length === 1 
-                ? "1 Buch gefunden für" 
-                : `${filteredBooks.length} Bücher gefunden für`}: "{displayQuery}"
-            </div>
-            <button
-              onClick={resetSearch}
-              className="text-sm text-blue-700 hover:text-blue-900 font-medium flex items-center"
-            >
-              <X className="w-4 h-4 mr-1" />
-              Zurücksetzen und alle Bücher anzeigen
-            </button>
-          </div>
-        )}
+        <BookFilter
+          levels={LEVELS}
+          selectedLevels={selectedLevels}
+          onLevelChange={handleLevelChange}
+          schools={SCHOOLS}
+          selectedSchool={selectedSchool}
+          onSchoolChange={handleSchoolChange}
+          types={BOOK_TYPES}
+          selectedType={selectedType}
+          onTypeChange={handleTypeChange}
+          subjects={SUBJECTS}
+          selectedSubjects={selectedSubjects}
+          onSubjectChange={handleSubjectChange}
+          yearRange={YEAR_RANGE}
+          selectedYearRange={selectedYearRange}
+          onYearRangeChange={handleYearRangeChange}
+          selectedAvailability={selectedAvailability}
+          onAvailabilityChange={handleAvailabilityChange}
+          locations={LOCATIONS}
+          selectedLocation={selectedLocation}
+          onLocationChange={handleLocationChange}
+          onClearFilters={resetSearchAndFilters}
+        />
 
-        {/* Main content */}
         <main className="flex-1">
           <div className="w-full px-2 sm:px-4">
             {loadingError && (
@@ -317,23 +386,23 @@ const BookManagement = ({
               </div>
             )}
             <BookGrid
-              books={filteredBooks} // filteredBooks ist jetzt FetchedBook[], BookGrid muss angepasst werden
+              books={filteredBooks}
               onBookChange={handleBookChange}
             />
-            {!loading && filteredBooks.length === 0 && !loadingError && displayQuery && (
+            {!loading && filteredBooks.length === 0 && !loadingError && isFilteredState && (
                <div className="text-center p-8 text-gray-500">
-                 Keine Bücher für "{displayQuery}" gefunden.
+                 Keine Bücher für Ihre Auswahl gefunden.
                </div>
             )}
-            {!loading && filteredBooks.length === 0 && !loadingError && !displayQuery && (
+             {!loading && filteredBooks.length === 0 && !loadingError && !isFilteredState && (
               <div className="text-center p-8 text-gray-500">
-                Keine Bücher vorhanden.
+                Keine Bücher vorhanden. Bitte fügen Sie welche hinzu oder überprüfen Sie Ihre Suchkriterien.
               </div>
             )}
             {hasMore && !loading && (
               <div className="flex justify-center my-6">
                 <button
-                  onClick={() => fetchBooks(searchQuery, true)}
+                  onClick={() => fetchBooks(searchQuery, true, getCurrentFilters())}
                   className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition ease-in-out duration-150"
                   disabled={loading}
                 >
@@ -343,7 +412,6 @@ const BookManagement = ({
             )}
           </div>
         </main>
-
         <ChatButton />
       </div>
     </div>

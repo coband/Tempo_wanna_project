@@ -547,39 +547,39 @@ export function BookFilter({
       {/* Aktive Filter anzeigen und Reset-Button */}
       {hasActiveFilters && (
         <div className="flex flex-col sm:flex-row sm:justify-between mb-4">
-          <div className="flex flex-wrap gap-2 mb-2 sm:mb-0">
+          <div className="flex flex-wrap gap-2 mb-2 sm:mb-0 pl-3">
+            {selectedType && (
+              <Badge variant="secondary" className="px-3 py-1.5">
+                Typ: {selectedType}
+              </Badge>
+            )}
             {selectedLevels.length > 0 && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Stufen: {selectedLevels.join(', ')}
               </Badge>
             )}
             {selectedSchool && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Schulhaus: {selectedSchool}
               </Badge>
             )}
-            {selectedType && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Typ: {selectedType}
-              </Badge>
-            )}
             {selectedSubjects.length > 0 && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Fächer: {selectedSubjects.join(', ')}
               </Badge>
             )}
             {(selectedYearRange[0] !== yearRange[0] || selectedYearRange[1] !== yearRange[1]) && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Jahr: {selectedYearRange[0]} - {selectedYearRange[1]}
               </Badge>
             )}
             {selectedAvailability !== null && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Verfügbarkeit: {selectedAvailability ? 'Verfügbar' : 'Ausgeliehen'}
               </Badge>
             )}
             {selectedLocation && (
-              <Badge variant="secondary" className="px-2 py-1">
+              <Badge variant="secondary" className="px-3 py-1.5">
                 Standort: {selectedLocation}
               </Badge>
             )}
@@ -589,7 +589,7 @@ export function BookFilter({
             variant="outline" 
             size="sm" 
             onClick={onClearFilters}
-            className="flex items-center gap-1"
+            className="flex items-center gap-1 mr-3"
           >
             <XCircle className="h-4 w-4" />
             Filter zurücksetzen
