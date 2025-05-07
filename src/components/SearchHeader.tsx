@@ -109,9 +109,12 @@ const SearchHeader = ({
         } catch (error) {
           console.error("Failed to fetch suggestions:", error);
           setSuggestionItems([]); // Bei Fehler leeren
+        } finally {
+          setIsFetchingSuggestions(false); // Ladezustand hier zurücksetzen
         }
       } else {
         setSuggestionItems([]); // Leeren, wenn Query leer ist
+        setIsFetchingSuggestions(false); // Auch hier zurücksetzen, falls Query leer wird
       }
     }, 300) // 300ms debounce
   ).current;
@@ -172,7 +175,6 @@ const SearchHeader = ({
       debouncedFetchSuggestions(value);
     } else {
       setSuggestionItems([]); // Leeren, wenn Suchfeld geleert wird
-      setIsFetchingSuggestions(false);
       setIsDropdownOpen(false);
     }
   };
