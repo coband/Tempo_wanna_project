@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm, Controller } from "react-hook-form";
-import { Camera, ChevronDown, X, ChevronLeft, Check } from "lucide-react";
+import { Camera, ChevronDown, X, ChevronLeft, Check, BookOpen } from "lucide-react";
 import { BarcodeScanner } from "./BarcodeScanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -747,7 +747,7 @@ export function BookForm({
         className={`
           ${isMobile 
             ? 'w-full h-screen max-h-screen max-w-full p-0 m-0 rounded-none inset-0 translate-x-0 translate-y-0 top-0 left-0' 
-            : 'sm:max-w-[425px] h-[90vh]'
+            : 'sm:max-w-[700px] max-h-[85vh]'
           } overflow-y-auto
         `}
         style={isMobile ? {
@@ -759,21 +759,35 @@ export function BookForm({
           <>
             <MobileHeader />
             <div className="pt-14 pb-32 px-4"> {/* Erhöhtes padding-bottom für mehr Platz unten */}
-              <DialogDescription className="text-gray-600 mt-2 mb-4">
-                {initialBook
-                  ? "Bearbeiten Sie die Buchinformationen."
-                  : "Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen."}
-              </DialogDescription>
+              <DialogHeader className="pb-4 border-b">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-primary" />
+                  <DialogTitle className="text-xl font-semibold">
+                    {initialBook ? "Buch bearbeiten" : "Buch hinzufügen"}
+                  </DialogTitle>
+                </div>
+                <DialogDescription className="text-gray-600 mt-2 text-base">
+                  {initialBook
+                    ? "Bearbeiten Sie die Buchinformationen."
+                    : "Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen."}
+                </DialogDescription>
+              </DialogHeader>
               
               <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="title">Titel</Label>
-                  <Input
-                    id="title"
-                    {...register("title", { required: "Titel ist erforderlich" })}
-                    placeholder="Buchtitel eingeben"
-                    className="w-full"
-                  />
+                  <div className="relative group">
+                    <Input
+                      id="title"
+                      {...register("title", { required: "Titel ist erforderlich" })}
+                      placeholder="Buchtitel eingeben"
+                      className="w-full overflow-x-auto whitespace-nowrap"
+                      title={getValues("title") || ""}
+                    />
+                    <div className="absolute left-0 -top-8 bg-black text-white p-1 rounded text-xs hidden group-hover:block whitespace-normal max-w-[250px] z-50">
+                      {getValues("title") && getValues("title").length > 40 ? getValues("title") : ""}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -979,185 +993,193 @@ export function BookForm({
           </>
         ) : (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold">
-                {initialBook ? "Buch bearbeiten" : "Buch hinzufügen"}
-              </DialogTitle>
-              <DialogDescription className="text-gray-600">
+            <DialogHeader className="pb-4 border-b">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-primary" />
+                <DialogTitle className="text-xl font-semibold">
+                  {initialBook ? "Buch bearbeiten" : "Buch hinzufügen"}
+                </DialogTitle>
+              </div>
+              <DialogDescription className="text-gray-600 mt-2 text-base">
                 {initialBook
                   ? "Bearbeiten Sie die Buchinformationen."
                   : "Füllen Sie die folgenden Felder aus, um ein neues Buch hinzuzufügen."}
               </DialogDescription>
             </DialogHeader>
 
-            <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label htmlFor="title">Titel</Label>
-                <Input
-                  id="title"
-                  {...register("title", { required: "Titel ist erforderlich" })}
-                  placeholder="Buchtitel eingeben"
-                  className="w-full"
-                />
+            <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-6 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Linke Spalte */}
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="title" className="text-sm font-semibold">Titel</Label>
+                    <div className="relative group">
+                      <Input
+                        id="title"
+                        {...register("title", { required: "Titel ist erforderlich" })}
+                        placeholder="Buchtitel eingeben"
+                        className="w-full overflow-x-auto whitespace-nowrap"
+                        title={getValues("title") || ""}
+                      />
+                      <div className="absolute left-0 -top-8 bg-black text-white p-1 rounded text-xs hidden group-hover:block whitespace-normal max-w-[350px] z-50">
+                        {getValues("title") && getValues("title").length > 50 ? getValues("title") : ""}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="author" className="text-sm font-semibold">Autor</Label>
+                    <Input
+                      id="author"
+                      {...register("author")}
+                      placeholder="Autor eingeben"
+                      className="w-full"
+                      style={inputStyles}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="isbn" className="text-sm font-semibold">ISBN</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="isbn"
+                        {...register("isbn")}
+                        placeholder="ISBN eingeben"
+                        className="flex-1"
+                        style={inputStyles}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setShowScanner(true)}
+                        disabled={isLoadingBookInfo}
+                      >
+                        <Camera className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleScan(getValues("isbn"))}
+                        disabled={isLoadingBookInfo}
+                      >
+                        Suchen
+                      </Button>
+                    </div>
+                    {isLoadingBookInfo && (
+                      <div className="text-sm text-muted-foreground mt-1">
+                        Lade Buchinformationen...
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="publisher" className="text-sm font-semibold">Verlag</Label>
+                    <Input
+                      id="publisher"
+                      {...register("publisher")}
+                      placeholder="Verlag eingeben"
+                      className="w-full"
+                      style={inputStyles}
+                    />
+                  </div>
+                </div>
+
+                {/* Rechte Spalte */}
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="subject" className="text-sm font-semibold">Fach</Label>
+                    <Controller
+                      name="subject"
+                      control={control}
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger style={inputStyles}>
+                            <SelectValue placeholder="Fach auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableSubjects.map((subject) => (
+                              <SelectItem key={subject} value={subject}>
+                                {subject}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="level" className="text-sm font-semibold">Stufe</Label>
+                    <input
+                      type="hidden"
+                      id="level"
+                      {...register("level")}
+                    />
+                    <DesktopLevelSelect />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="type" className="text-sm font-semibold">Buchtyp</Label>
+                    <Controller
+                      name="type"
+                      control={control}
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <SelectTrigger style={inputStyles}>
+                            <SelectValue placeholder="Buchtyp auswählen" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableBookTypes.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {type}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="author">Autor</Label>
-                <Input
-                  id="author"
-                  {...register("author")}
-                  placeholder="Autor eingeben"
-                  className="w-full"
-                  style={inputStyles}
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-3">
+                <div className="space-y-2">
+                  <Label htmlFor="school" className="text-sm font-semibold">Schulhaus</Label>
+                  <Controller
+                    name="school"
+                    control={control}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
+                        <SelectTrigger style={inputStyles}>
+                          <SelectValue placeholder="Schulhaus auswählen" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SCHOOLS.map((school) => (
+                            <SelectItem key={school} value={school}>
+                              {school}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="isbn">ISBN</Label>
-                <div className="flex gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="location" className="text-sm font-semibold">Ort</Label>
                   <Input
-                    id="isbn"
-                    {...register("isbn")}
-                    placeholder="ISBN eingeben"
-                    className="flex-1"
+                    id="location"
+                    {...register("location")}
+                    placeholder="Ort eingeben"
+                    className="w-full"
                     style={inputStyles}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowScanner(true)}
-                    disabled={isLoadingBookInfo}
-                  >
-                    <Camera className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => handleScan(getValues("isbn"))}
-                    disabled={isLoadingBookInfo}
-                  >
-                    Suchen
-                  </Button>
                 </div>
-                {isLoadingBookInfo && (
-                  <div className="text-sm text-muted-foreground mt-1">
-                    Lade Buchinformationen...
-                  </div>
-                )}
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="subject">Fach</Label>
-                <Controller
-                  name="subject"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger style={inputStyles}>
-                        <SelectValue placeholder="Fach auswählen" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableSubjects.map((subject) => (
-                          <SelectItem key={subject} value={subject}>
-                            {subject}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="level">Stufe</Label>
-                <input
-                  type="hidden"
-                  id="level"
-                  {...register("level")}
-                />
-                <DesktopLevelSelect />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="type">Buchtyp</Label>
-                <Controller
-                  name="type"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger style={inputStyles}>
-                        <SelectValue placeholder="Buchtyp auswählen" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableBookTypes.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="publisher">Verlag</Label>
-                <Input
-                  id="publisher"
-                  {...register("publisher")}
-                  placeholder="Verlag eingeben"
-                  className="w-full"
-                  style={inputStyles}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="school">Schulhaus</Label>
-                <Controller
-                  name="school"
-                  control={control}
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value || "Chriesiweg"}>
-                      <SelectTrigger style={inputStyles}>
-                        <SelectValue placeholder="Schulhaus auswählen" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SCHOOLS.map((school) => (
-                          <SelectItem key={school} value={school}>
-                            {school}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Beschreibung</Label>
-                <textarea
-                  id="description"
-                  {...register("description")}
-                  placeholder="Beschreibung eingeben"
-                  className="w-full min-h-[100px] p-2 border rounded-md"
-                  style={inputStyles}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="location">Ort</Label>
-                <Input
-                  id="location"
-                  {...register("location")}
-                  placeholder="Ort eingeben"
-                  className="w-full"
-                  style={inputStyles}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="year">Erscheinungsjahr</Label>
+              <div className="space-y-2 pt-3">
+                <Label htmlFor="year" className="text-sm font-semibold">Erscheinungsjahr</Label>
                 <Input
                   id="year"
                   type="number"
@@ -1173,20 +1195,36 @@ export function BookForm({
                     },
                   })}
                   placeholder="Jahr eingeben"
-                  className="w-full"
+                  className="w-full max-w-xs"
                   style={inputStyles}
                 />
               </div>
 
-              <div className="flex justify-end gap-2 mt-6">
+              <div className="space-y-2 pt-3">
+                <Label htmlFor="description" className="text-sm font-semibold">Beschreibung</Label>
+                <textarea
+                  id="description"
+                  {...register("description")}
+                  placeholder="Beschreibung eingeben"
+                  className="w-full min-h-[120px] p-3 border rounded-md"
+                  style={inputStyles}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleCancel}
+                  className="px-5 py-2 h-10"
                 >
                   Abbrechen
                 </Button>
-                <Button type="submit" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  disabled={isLoading}
+                  className="px-6 py-2 h-10"
+                >
                   {isLoading && (
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
                   )}

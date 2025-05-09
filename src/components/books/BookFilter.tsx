@@ -504,7 +504,7 @@ export function BookFilter({
   // Mobile Filter-Button mit Dropdown
   if (isMobile) {
     return (
-      <div className="px-4 mb-3">
+      <div className="px-4 mb-3 mt-3">
         <div className="flex justify-between items-center">
           <Collapsible 
             open={isFilterOpen} 
@@ -553,7 +553,7 @@ export function BookFilter({
 
   // Desktop Filter mit festen Checkboxen
   return (
-    <div className="px-4 mb-3">
+    <div className="px-4 mb-3 mt-3">
       {isInitialRender ? null : (
         <div className="flex flex-col">
           <div className="flex justify-between items-center mb-2">

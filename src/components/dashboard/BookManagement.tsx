@@ -23,7 +23,7 @@ export type Book = Database["public"]["Tables"]["books"]["Row"];
 export type FetchedBook = Omit<Book, "embedding" | "user_id" | "vector_source">;
 
 // Typ für Suchvorschläge im Header (schlank)
-export type BookSuggestion = Pick<Book, "id" | "title" | "author" | "isbn" | "subject" | "level">;
+export type BookSuggestion = Pick<Book, "id" | "title" | "author" | "isbn" | "subject" | "level" | "publisher">;
 
 interface BookManagementProps {
   initialSearchQuery?: string;
@@ -199,8 +199,8 @@ const BookManagement = ({
       const processedSearchTerm = `%${searchTerm.trim().replace(/ /g, "%")}%`;
       const { data, error } = await supabase
         .from("books")
-        .select("id, title, author, isbn, subject, level")
-        .or(`title.ilike.${processedSearchTerm},author.ilike.${processedSearchTerm},isbn.ilike.${processedSearchTerm},subject.ilike.${processedSearchTerm},level.ilike.${processedSearchTerm}`)
+        .select("id, title, author, isbn, subject, level, publisher")
+        .or(`title.ilike.${processedSearchTerm},author.ilike.${processedSearchTerm},isbn.ilike.${processedSearchTerm},subject.ilike.${processedSearchTerm},level.ilike.${processedSearchTerm},publisher.ilike.${processedSearchTerm}`)
         .limit(10);
       if (error) {
         console.error("Error fetching client-side suggestions:", error);

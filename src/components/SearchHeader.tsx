@@ -140,9 +140,10 @@ const SearchHeader = ({
       const query = searchQuery.toLowerCase().trim();
       const normalizedQuery = normalizeISBN(query);
 
-      // Grundlegende Prüfung, ob Titel, Autor oder ISBN passen
+      // Grundlegende Prüfung, ob Titel, Autor, ISBN oder Verlag passen
       if (book.title && book.title.toLowerCase().includes(query)) return true;
       if (book.author && book.author.toLowerCase().includes(query)) return true;
+      if (book.publisher && book.publisher.toLowerCase().includes(query)) return true;
       if (book.isbn) {
         const normalizedBookISBN = normalizeISBN(book.isbn);
         if (normalizedBookISBN.includes(normalizedQuery)) return true;
@@ -221,7 +222,7 @@ const SearchHeader = ({
             <Input
               ref={inputRef}
               type="text"
-              placeholder={isMobileView ? "Suche nach Titel Autor..." : "Suche nach Titel, Autor, Verlag, Beschreibung..."}
+              placeholder={isMobileView ? "Suche nach Titel Autor..." : "Suche nach Titel, Autor, Verlag, ISBN"}
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleKeyDown}
