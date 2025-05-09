@@ -431,7 +431,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             ...ALLOWED_ORIGINS,
             "https://api.example.com",
             "http://localhost:3000", 
-            "http://127.0.0.1:3000"
+            "http://127.0.0.1:3000",
+            "https://www.wanna-books.ch",
+            "https://wanna-books.ch",
+            "https://tempo-wanna-project.vercel.app",
+            "https://tempo-wanna-project-cornelbandli.vercel.app"
           ]
         };
         
