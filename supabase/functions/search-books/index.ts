@@ -337,7 +337,6 @@ async function getEmbedding(query) {
     throw new Error('OpenAI API Key nicht konfiguriert');
   }
   
-  console.log('OpenAI Key gefunden, Länge:', openAiKey.length);
   console.log('Erstelle Embedding für:', query);
   
   // OpenAI API aufrufen, um ein Embedding für die Suchanfrage zu erstellen
