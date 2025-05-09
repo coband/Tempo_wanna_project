@@ -42,7 +42,7 @@ assertEnv('VITE_CLERK_PUBLISHABLE_KEY');
 // -----------------------------------------------------------------------------
 
 const SUPABASE_URL           = process.env.VITE_SUPABASE_URL!;
-const SUPABASE_SERVICE_KEY   = process.env.VITE_SUPABASE_SERVICE_KEY!;
+const SUPABASE_SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const R2_BUCKET_NAME         = process.env.R2_BUCKET_NAME    || 'books';
 const R2_ACCOUNT_ID          = process.env.CF_ACCOUNT_ID!;
