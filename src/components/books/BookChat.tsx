@@ -474,6 +474,13 @@ export function BookChat({ open, onOpenChange }: BookChatProps) {
       // Transition-Effekt starten
       setIsTransitioning(true);
       
+      // Wenn wir eine Buch-ID haben, navigiere einfach zur neuen /chat/:id Route
+      if (book.id) {
+        navigate(`/chat/${book.id}`);
+        return;
+      }
+
+      // Fallback zur alten Methode, falls keine ID vorhanden ist
       // Prüfe ob supabase verfügbar ist
       if (!supabase || !supabase.storage) {
         throw new Error("Supabase Storage nicht verfügbar");

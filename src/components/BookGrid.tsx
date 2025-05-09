@@ -185,24 +185,16 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     }
   };
 
-  // Funktion zum Finden und Öffnen des PDFs
-  const openPdfChat = async (book: FetchedBook) => {
-    if (book.has_pdf && book.id) {
-      navigate(`/chat/${book.id}`);
-    } else {
-      toast({
-        variant: "default",
-        title: "Kein PDF verfügbar",
-        description: "Für dieses Buch ist leider kein PDF für den Chat vorhanden."
-      });
-    }
+  // Funktion zum Öffnen des PDF-Chats
+  const openPdfChat = (book: FetchedBook) => {
+    navigate(`/chat/${book.id}`);
   };
 
   return (
     <div className="p-4">
       {/* Add Button für Admins */}
       {isAdmin && (
-        <div className="mb-6">
+        <div className="mb-3">
           <Button
             onClick={() => {
               setSelectedBook(null);

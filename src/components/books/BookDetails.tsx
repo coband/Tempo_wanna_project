@@ -166,11 +166,8 @@ function BookDetails({
   // Handler für das Öffnen des PDF-Chats
   const handleOpenPdfChat = () => {
     try {
-      // Cloudflare R2 Bucket verwendet genau dieses Format: "ISBN _Titel.pdf"
-      const pdfPath = `${book.isbn} _${book.title?.replace(/[^\w\säöüÄÖÜß]/g, '')}.pdf`;
-      
-      // Direkt zum PDF-Chat navigieren
-      navigate(`/pdf-chat?pdf=${encodeURIComponent(pdfPath)}`);
+      // Direkt zur neuen Chat-Route navigieren mit der Buch-ID
+      navigate(`/chat/${book.id}`);
     } catch (error: any) {
       toast({
         variant: "destructive",

@@ -77,6 +77,8 @@ function App() {
         />
         {/* PDF Chat Route */}
         <Route path="/pdf-chat" element={<PdfChatPage />} />
+        {/* Chat Route mit ID Parameter */}
+        <Route path="/chat/:id" element={<PdfChatPage />} />
         {/* Admin-Routen */}
         <Route
           path="/admin/users"

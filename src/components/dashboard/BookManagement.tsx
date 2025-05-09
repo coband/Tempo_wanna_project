@@ -14,6 +14,7 @@ import {
   YEAR_RANGE,
 } from "@/lib/constants";
 import { BookFilter } from '../books/BookFilter';
+import { Button } from "@/components/ui/button";
 
 // Definiere den Book-Typ basierend auf dem generierten Tabellentyp
 export type Book = Database["public"]["Tables"]["books"]["Row"];
@@ -401,13 +402,15 @@ const BookManagement = ({
             )}
             {hasMore && !loading && (
               <div className="flex justify-center my-6">
-                <button
+                <Button
                   onClick={() => fetchBooks(searchQuery, true, getCurrentFilters())}
-                  className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition ease-in-out duration-150"
+                  variant="default" 
+                  size="lg"
+                  className="rounded-md px-6 transition-all hover:translate-y-[-1px]"
                   disabled={loading}
                 >
                   {loading ? "Lädt..." : "Weitere Bücher laden"}
-                </button>
+                </Button>
               </div>
             )}
           </div>
