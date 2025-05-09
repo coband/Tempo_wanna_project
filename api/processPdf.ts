@@ -28,7 +28,7 @@ function assertEnv(name: string) {
   return process.env[name]!;
 }
 
-assertEnv('SUPABASE_URL');
+assertEnv('VITE_SUPABASE_URL');
 assertEnv('SUPABASE_SERVICE_ROLE_KEY');
 assertEnv('GEMINI_API_KEY');
 assertEnv('CF_ACCOUNT_ID');
@@ -41,9 +41,8 @@ assertEnv('VITE_CLERK_PUBLISHABLE_KEY');
 //  CONFIG
 // -----------------------------------------------------------------------------
 
-const SUPABASE_URL           = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const BUCKET_NAME_SUPABASE   = process.env.PDF_BUCKET_NAME   || 'books';
+const SUPABASE_URL           = process.env.VITE_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY   = process.env.VITE_SUPABASE_SERVICE_KEY!;
 
 const R2_BUCKET_NAME         = process.env.R2_BUCKET_NAME    || 'books';
 const R2_ACCOUNT_ID          = process.env.CF_ACCOUNT_ID!;
@@ -54,7 +53,6 @@ const MODEL_NAME             = 'gemini-2.5-flash-preview-04-17'; // Aktuelles Mo
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'https://your‑frontend.com',
   'https://www.wanna-books.ch',
   'https://wanna-books.ch',
   'https://tempo-wanna-project.vercel.app',
