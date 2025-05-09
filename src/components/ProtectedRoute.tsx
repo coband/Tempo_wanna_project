@@ -1,5 +1,5 @@
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,7 +59,7 @@ interface BookPreview {
 
 export function BulkImportBooks() {
   // Supabase authentifizierten Client holen
-  const { supabase: authClient, publicClient: supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
   const [isbnList, setIsbnList] = useState('');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
@@ -148,7 +148,7 @@ export function BulkImportBooks() {
       }, 500);
       
       // Edge-Funktion aufrufen - mit preview: true
-      const { data, error: rpcError } = await authClient.functions.invoke('bulk-import-books', {
+      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
         body: { isbns, preview: true } // Preview-Modus aktivieren
       });
       
@@ -238,7 +238,7 @@ export function BulkImportBooks() {
       }, 500);
       
       // Rufe die Edge-Funktion mit dem authentifizierten Supabase-Client auf
-      const { data, error: rpcError } = await authClient.functions.invoke('bulk-import-books', {
+      const { data, error: rpcError } = await supabase.functions.invoke('bulk-import-books', {
         body: { isbns: selectedIsbns } // Nur ausgewählte ISBNs senden
       });
       

@@ -1,426 +1,491 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { GoogleGenAI, createPartFromUri } from '@google/genai';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { Readable } from 'stream';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
+import fetch from 'node-fetch';
+import { createClerkClient } from '@clerk/backend';
 
-// Lade Umgebungsvariablen aus .env-Datei
+// -----------------------------------------------------------------------------
+//  ENV‑SETUP
+// -----------------------------------------------------------------------------
+//  Lädt .env-Datei bei lokaler Entwicklung → in Vercel Production kommen die
+//  Variablen aus dem Dashboard.
+// -----------------------------------------------------------------------------
+
 dotenv.config();
 
-// Debugging: Umgebungsvariablen überprüfen (ohne sensible Daten vollständig anzuzeigen)
-console.log('Umgebungsvariablen geladen:');
-console.log('SUPABASE_URL vorhanden:', !!process.env.SUPABASE_URL);
-console.log('SUPABASE_SERVICE_ROLE_KEY vorhanden:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-console.log('GEMINI_API_KEY vorhanden:', !!process.env.GEMINI_API_KEY);
-console.log('PDF_BUCKET_NAME:', process.env.PDF_BUCKET_NAME || 'books');
+// -----------------------------------------------------------------------------
+//  ENV‑VALIDIERUNG (minimal). Für ein großes Projekt empfiehlt sich zod.
+// -----------------------------------------------------------------------------
 
-// --- Konfiguration ---
-const BUCKET_NAME = process.env.PDF_BUCKET_NAME || 'books';
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-const MODEL_NAME = 'gemini-2.5-flash-preview-04-17'; // Aktuelles Modell verwenden
-
-// Initialisierung von Clients
-let supabase: SupabaseClient | null = null;
-let genAI: GoogleGenAI | null = null;
-
-if (SUPABASE_URL && SUPABASE_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  console.log('Supabase-Client initialisiert');
-} else {
-  console.error('Supabase-Konfiguration fehlt:', {
-    urlVorhanden: !!SUPABASE_URL,
-    keyVorhanden: !!SUPABASE_KEY
-  });
+function assertEnv(name: string) {
+  if (!process.env[name]) throw new Error(`Environment variable ${name} missing`);
+  return process.env[name]!;
 }
 
-if (GEMINI_API_KEY) {
-  genAI = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-  console.log('Gemini-API-Client initialisiert');
-} else {
-  console.error('Gemini API-Schlüssel fehlt');
+assertEnv('SUPABASE_URL');
+assertEnv('SUPABASE_SERVICE_ROLE_KEY');
+assertEnv('GEMINI_API_KEY');
+assertEnv('CF_ACCOUNT_ID');
+assertEnv('CF_R2_ACCESS_KEY_ID');
+assertEnv('CF_R2_SECRET_ACCESS_KEY');
+assertEnv('CLERK_SECRET_KEY');
+assertEnv('CLERK_PUBLISHABLE_KEY');
+
+// -----------------------------------------------------------------------------
+//  CONFIG
+// -----------------------------------------------------------------------------
+
+const SUPABASE_URL           = process.env.SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const BUCKET_NAME_SUPABASE   = process.env.PDF_BUCKET_NAME   || 'books';
+
+const R2_BUCKET_NAME         = process.env.R2_BUCKET_NAME    || 'books';
+const R2_ACCOUNT_ID          = process.env.CF_ACCOUNT_ID!;
+const R2_ACCESS_KEY_ID       = process.env.CF_R2_ACCESS_KEY_ID!;
+const R2_SECRET_ACCESS_KEY   = process.env.CF_R2_SECRET_ACCESS_KEY!;
+const MODEL_NAME             = 'gemini-2.5-flash-preview-04-17'; // Aktuelles Modell verwenden
+
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://your‑frontend.com'
+];
+
+// Maximum size for initial text extraction from PDF (5 MB)
+const MAX_INITIAL_CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+
+// Maximum PDF size that we'll process (200 MB)
+// Dies ist eine Sicherheitsgrenze für sehr große PDFs
+const MAX_PROCESSABLE_PDF_SIZE = 200 * 1024 * 1024; // 200 MB
+
+// Metadaten-Caching aktivieren (spart HEAD-Requests)
+const ENABLE_METADATA_CACHING = true; // Leichtgewichtiges Caching für Metadaten (ETag, Größe)
+
+// -----------------------------------------------------------------------------
+//  CACHING
+// -----------------------------------------------------------------------------
+// Modul-level Map für PDF-Metadaten-Caching
+// Key: Pfad, Value: Metadaten
+interface PdfMetadata {
+  etag: string | null;
+  size: number | null;
+  lastAccessed: number;
 }
 
-// CORS-Header Einstellungen
-function getCorsHeaders(req: VercelRequest): Record<string, string> {
-  // Liste der erlaubten Origins
-  const ALLOWED_ORIGINS = [
-    // Lokale Entwicklungsumgebungen
-    "http://localhost:5173",  // Vite Standard
-    "http://localhost:3000",  // Alternative lokale Ports
-    "http://localhost:8000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-    
-    // Produktionsdomains
-    "https://tempo-wanna-project-6xlvwe4km-cobands-projects.vercel.app",
-    "https://www.wanna-books.ch"
-  ];
+// Leichtgewichtiger Cache für Metadaten (kleiner Memory-Footprint)
+const metadataCache = new Map<string, PdfMetadata>();
 
+// Cache-Maintenance: Entferne alte Einträge (älter als 30 Minuten)
+const cleanupCache = () => {
+  const now = Date.now();
+  const MAX_AGE = 30 * 60 * 1000; // 30 Minuten (statt 10)
+  
+  // Metadaten-Cache aufräumen
+  for (const [key, metadata] of metadataCache.entries()) {
+    if (now - metadata.lastAccessed > MAX_AGE) {
+      metadataCache.delete(key);
+    }
+  }
+};
+
+// Regelmäßige Cache-Bereinigung
+setInterval(cleanupCache, 15 * 60 * 1000); // Alle 15 Minuten (statt 5)
+
+// -----------------------------------------------------------------------------
+//  CLIENTS
+// -----------------------------------------------------------------------------
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+const r2Client = new S3Client({
+  region: 'auto',
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY,
+  }
+});
+
+// Clerk Client für die Authentifizierung
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
+});
+
+// -----------------------------------------------------------------------------
+//  HELPERS
+// -----------------------------------------------------------------------------
+
+function respondCors(req: VercelRequest, res: VercelResponse, status = 200) {
   const origin = req.headers.origin as string | undefined;
-  
-  // Standard-CORS-Header
-  const headers: Record<string, string> = {
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Credentials': 'true',
-    'Vary': 'Origin'
-  };
-  
-  // Setze den Origin-Header nur, wenn der angeforderte Origin erlaubt ist
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Vary', 'Origin');
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-  } else {
-    // Wenn kein Origin angegeben oder nicht erlaubt, verwende den ersten erlaubten Origin
-    headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGINS[0];
+    res.setHeader('Access-Control-Allow-Origin', origin);
   }
-
-  return headers;
+  res.status(status);
 }
 
-// Hilfsfunktion zur Behandlung von CORS-Preflight-Anfragen
-function handleCorsPreflightRequest(req: VercelRequest, res: VercelResponse): boolean {
-  if (req.method === 'OPTIONS') {
-    const corsHeaders = getCorsHeaders(req);
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-      res.setHeader(key, value);
-    });
-    res.status(204).end();
-    return true;
-  }
-  return false;
-}
+// -----------------------------------------------------------------------------
+//  CORE LOGIC
+// -----------------------------------------------------------------------------
 
-// Logging-Funktion mit Zeitstempel
-function logWithTimestamp(message: string, data?: any): void {
-  const timestamp = new Date().toISOString();
-  if (data) {
-    console.log(`[${timestamp}] ${message}`, data);
-  } else {
-    console.log(`[${timestamp}] ${message}`);
-  }
-}
-
-/**
- * Konvertiert Markdown-ähnlichen Text in HTML
- * @param text Der zu konvertierende Text
- * @returns Formatierter HTML-Text
- */
-function convertToHtml(text: string | undefined): string {
-  if (!text) return '';
-  
-  // Zeilenumbrüche in <br> umwandeln
-  let html = text.replace(/\n/g, '<br>');
-  
-  // Fettgedruckten Text umwandeln (**text** oder __text__)
-  html = html.replace(/(\*\*|__)(.*?)\1/g, '<strong>$2</strong>');
-  
-  // Kursiven Text umwandeln (*text* oder _text_)
-  html = html.replace(/(\*|_)(.*?)\1/g, '<em>$2</em>');
-  
-  // Überschriften umwandeln
-  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
-  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
-  
-  // Listen umwandeln
-  html = html.replace(/^\* (.*?)$/gm, '<li>$1</li>');
-  html = html.replace(/^- (.*?)$/gm, '<li>$1</li>');
-  html = html.replace(/^(\d+)\. (.*?)$/gm, '<li>$2</li>');
-  
-  // Listen gruppieren
-  html = html.replace(/(<li>.*?<\/li>)+/g, (match) => `<ul>${match}</ul>`);
-  
-  return html;
-}
-
-// Validieren der Authentifizierung
-async function validateAuth(req: VercelRequest): Promise<{ valid: boolean; userId?: string; error?: string }> {
-  // Auth-Header extrahieren
-  const authHeader = req.headers.authorization || '';
-  
-  // Logging
-  logWithTimestamp('Authorization Header vorhanden:', !!authHeader);
-  
-  // Sicherere Überprüfung, um undefined/null zu vermeiden
-  if (!authHeader || typeof authHeader !== 'string') {
-    return { valid: false, error: 'Kein Authorization Header gefunden' };
+async function getObjectETag(key: string): Promise<string | null> {
+  // Versuche, den ETag aus dem Metadaten-Cache zu holen
+  if (ENABLE_METADATA_CACHING && metadataCache.has(key)) {
+    const metadata = metadataCache.get(key)!;
+    metadata.lastAccessed = Date.now(); // Aktualisiere Zeitstempel
+    return metadata.etag;
   }
   
-  if (!authHeader.startsWith('Bearer ')) {
-    return { valid: false, error: 'Authorization Header muss mit "Bearer " beginnen' };
-  }
-
-  const token = authHeader.substring(7); // "Bearer " entfernen
-  if (!token) {
-    return { valid: false, error: 'Leeres Token' };
-  }
-
-  logWithTimestamp('Validiere Token...');
-
   try {
-    // Service-Role-Key als Fallback prüfen
-    if (token === SUPABASE_KEY) {
-      logWithTimestamp('Autorisierung erfolgt via Service-Role-Key');
-      return { valid: true, userId: 'service-role-admin' };
+    const response = await r2Client.send(
+      new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
+    );
+    
+    const etag = response.ETag || null;
+    const size = response.ContentLength || null;
+    
+    // Speichere Metadaten im Cache
+    if (ENABLE_METADATA_CACHING) {
+      metadataCache.set(key, {
+        etag,
+        size,
+        lastAccessed: Date.now()
+      });
     }
     
-    // Implementierung des nativen Ansatzes:
-    // Anstatt zu versuchen, das Token direkt zu validieren, 
-    // erstellen wir einen speziellen Supabase-Client, der das Token als Access-Token verwendet
-    const authClient = createClient(SUPABASE_URL || '', SUPABASE_KEY, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    });
+    return etag;
+  } catch (error) {
+    console.error(`Fehler beim Abrufen des ETag: ${error}`);
+    return null;
+  }
+}
+
+async function getObjectSize(key: string): Promise<number | null> {
+  // Versuche, die Größe aus dem Metadaten-Cache zu holen
+  if (ENABLE_METADATA_CACHING && metadataCache.has(key)) {
+    const metadata = metadataCache.get(key)!;
+    metadata.lastAccessed = Date.now(); // Aktualisiere Zeitstempel
+    return metadata.size;
+  }
+  
+  try {
+    const response = await r2Client.send(
+      new HeadObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key })
+    );
     
-    // Prüfen, ob der Client eine einfache Anfrage ausführen kann
-    // Dies wird fehlschlagen, wenn das Token ungültig ist
+    const size = response.ContentLength || null;
+    const etag = response.ETag || null;
+    
+    // Speichere Metadaten im Cache
+    if (ENABLE_METADATA_CACHING) {
+      metadataCache.set(key, {
+        etag,
+        size,
+        lastAccessed: Date.now()
+      });
+    }
+    
+    return size;
+  } catch (error) {
+    console.error(`Fehler beim Abrufen der Dateigröße: ${error}`);
+    return null;
+  }
+}
+
+async function fetchPdfFromR2(key: string, etag: string | null): Promise<Buffer> {
+  // Prüfe die Größe des PDFs (oder verwende bereits gecachte Metadaten)
+  const fileSize = await getObjectSize(key);
+  
+  // Sicherheitscheck: Wenn das PDF zu groß ist, verweigere die Verarbeitung
+  if (fileSize && fileSize > MAX_PROCESSABLE_PDF_SIZE) {
+    throw new Error(`Die PDF-Datei ist zu groß für die Verarbeitung (${(fileSize / (1024 * 1024)).toFixed(2)} MB). Das Limit liegt bei ${MAX_PROCESSABLE_PDF_SIZE / (1024 * 1024)} MB.`);
+  }
+  
+  // Immer die vollständige Datei laden, für vollständige Analyse
+  try {
+    const { Body } = await r2Client.send(
+      new GetObjectCommand({ 
+        Bucket: R2_BUCKET_NAME, 
+        Key: key
+      })
+    );
+    
+    const stream = Body as unknown as Readable;
+    
+    // Verwenden eines Arrays zur Sammlung von Chunks, um den Speicherverbrauch zu optimieren
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    
+    for await (const chunk of stream) {
+      const bufferChunk = chunk as Buffer;
+      chunks.push(bufferChunk);
+      totalSize += bufferChunk.length;
+    }
+    
+    return Buffer.concat(chunks);
+  } catch (error) {
+    console.error(`Fehler beim Herunterladen der PDF-Datei: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Fehler beim Herunterladen der PDF-Datei: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function createPresignedUrl(key: string): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: key
+  });
+  
+  // 1 Stunde gültigkeit
+  return await getSignedUrl(r2Client, command, { expiresIn: 3600 });
+}
+
+async function processPdf(pdfPath: string, question: string): Promise<string> {
+  try {
+    // 1. Zuerst den ETag der Datei holen (günstige Operation)
+    const etag = await getObjectETag(pdfPath);
+    
+    // Prüfe die Größe des PDFs
+    const fileSize = await getObjectSize(pdfPath);
+    
+    if (fileSize && fileSize > MAX_PROCESSABLE_PDF_SIZE) {
+      throw new Error(`Die PDF-Datei ist zu groß für die Verarbeitung (${(fileSize / (1024 * 1024)).toFixed(2)} MB). Das Limit liegt bei ${MAX_PROCESSABLE_PDF_SIZE / (1024 * 1024)} MB.`);
+    }
+    
+    // Traditionelle Methode: PDF herunterladen und manuell verarbeiten
     try {
-      logWithTimestamp('Teste Zugriff mit dem Token...');
-      // Versuche eine einfache Abfrage
-      const { data, error } = await authClient.from('books').select('count').limit(1);
-      
-      if (error) {
-        logWithTimestamp('Token-Validierung fehlgeschlagen:', error);
-        return { valid: false, error: `Unerlaubter Zugriff: ${error.message}` };
-      }
-      
-      // Token ist gültig, Zugriff gewährt
-      logWithTimestamp('Token ist gültig, Zugriff gewährt');
-      
-      // Versuche, die User-ID aus dem JWT zu extrahieren (für Logging)
+      // Immer das vollständige PDF laden für die Analyse
+      const pdfBuffer = await fetchPdfFromR2(pdfPath, etag);
+
+      // Tmp write (Workers KV / pipeline optional)
+      const tmpDir = path.join('/tmp', 'r2‑pdf');
+      await fs.mkdir(tmpDir, { recursive: true });
+      const tmpFile = path.join(tmpDir, `${Date.now()}.pdf`);
+      await fs.writeFile(tmpFile, pdfBuffer);
+
       try {
-        const tokenParts = token.split('.');
-        if (tokenParts.length === 3) {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          const userId = payload.sub || payload.user_id || 'unbekannt';
-          logWithTimestamp(`Benutzer-ID aus JWT: ${userId}`);
-          return { valid: true, userId };
+        // In einen Blob konvertieren für die Gemini API
+        const fileContent = await fs.readFile(tmpFile);
+        const fileBlob = new Blob([fileContent], { type: 'application/pdf' });
+        
+        // PDF-Datei hochladen
+        const file = await genAI.files.upload({
+          file: fileBlob,
+          config: {
+            displayName: path.basename(pdfPath),
+          },
+        });
+        
+        // Sicherstellen, dass file.name definiert ist
+        const fileName = file.name || `unknown-file-${Date.now()}`;
+        
+        // Sofort die temporäre Datei löschen, da sie nicht mehr benötigt wird
+        try {
+          await fs.unlink(tmpFile);
+        } catch (cleanupError) {
+          console.error(`Warnung: Konnte temporäre Datei nicht frühzeitig löschen: ${cleanupError}`);
         }
-      } catch (e) {
-        // Fehler beim Dekodieren des Tokens ignorieren, da wir bereits wissen, dass der Zugriff gültig ist
+        
+        // Auf Verarbeitung warten
+        let getFile = await genAI.files.get({ name: fileName });
+        let attempts = 0;
+        const maxAttempts = 15; // Mehr Versuche für große PDFs
+        
+        while (getFile.state === 'PROCESSING' && attempts < maxAttempts) {
+          // Warten und erneut prüfen
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          getFile = await genAI.files.get({ name: fileName });
+          attempts++;
+        }
+        
+        if (getFile.state === 'FAILED') {
+          throw new Error(`Dateiverarbeitung durch die Google Gemini API fehlgeschlagen. Status: ${getFile.state}, Reason: ${getFile.error || 'Unknown'}`);
+        }
+        
+        if (attempts >= maxAttempts && getFile.state === 'PROCESSING') {
+          throw new Error('Zeitüberschreitung bei der Dateiverarbeitung durch die Google Gemini API');
+        }
+        
+        // Inhalt für die Anfrage vorbereiten
+        const content: Array<{text: string} | ReturnType<typeof createPartFromUri>> = [
+          { text: `Ich habe eine Frage zu diesem PDF: ${question}` }
+        ];
+        
+        // Füge die Datei zum Inhalt hinzu
+        if (file.uri && file.mimeType) {
+          const fileContent = createPartFromUri(file.uri, file.mimeType);
+          content.push(fileContent);
+        }
+        
+        // Anfrage an die Gemini API senden
+        try {
+          const response = await genAI.models.generateContent({
+            model: MODEL_NAME,
+            contents: content,
+          });
+          
+          // Antwort extrahieren
+          const responseText = response.text || "Keine Antwort erhalten";
+          
+          // Datei aus der Google File API löschen, um Speicherplatz freizugeben
+          try {
+            await genAI.files.delete({ name: fileName });
+          } catch (deleteError) {
+            console.error(`Warnung: Konnte Datei ${fileName} nicht aus der Google File API löschen: ${deleteError}`);
+            // Fehler beim Löschen sollte den Prozess nicht unterbrechen
+          }
+          
+          return responseText;
+        } catch (genAiError: any) {
+          console.error(`Fehler bei Gemini-Generierung: ${genAiError}`);
+          
+          // Bei bestimmten Fehlern von Gemini (PDF zu groß oder andere Probleme)
+          // können wir das PDF nicht verarbeiten
+          if (String(genAiError).includes('File size too large') || 
+              String(genAiError).includes('exceeds maximum size')) {
+            throw new Error(`Die PDF-Datei ist zu groß für die Verarbeitung durch Gemini (${fileSize ? (fileSize / (1024 * 1024)).toFixed(2) + ' MB' : 'unbekannte Größe'}). Bitte verwenden Sie eine kleinere Datei oder teilen Sie die Datei in mehrere Teile auf.`);
+          }
+          
+          throw genAiError;
+        }
+        
+      } catch (error: any) {
+        console.error(`Fehler bei Gemini-Verarbeitung: ${error.message}`);
+        throw new Error(`Fehler bei der Gemini-Verarbeitung: ${error.message}`);
+      } finally {
+        // Cleanup - nur noch als Backup, falls die frühzeitige Löschung fehlgeschlagen ist
+        try {
+          // Prüfen, ob die Datei noch existiert, bevor wir versuchen sie zu löschen
+          const fileExists = await fs.access(tmpFile).then(() => true).catch(() => false);
+          if (fileExists) {
+            await fs.unlink(tmpFile);
+          }
+        } catch (cleanupError) {
+          console.error(`Warnung: Konnte temporäre Datei nicht löschen: ${cleanupError}`);
+        }
       }
-      
-      return { valid: true, userId: 'authorized-user' };
-    } catch (error: any) {
-      logWithTimestamp('Fehler bei der Zugriffsüberprüfung:', error?.message || error);
-      return { valid: false, error: `Zugriffsüberprüfung fehlgeschlagen: ${error?.message || 'Unbekannter Fehler'}` };
+    } catch (fetchError: any) {
+      console.error(`Fehler beim Abrufen des PDF: ${fetchError.message}`);
+      throw new Error(`Fehler beim Abrufen des PDF: ${fetchError.message}`);
     }
   } catch (error: any) {
-    logWithTimestamp('Fehler bei der Authentifizierung:', error?.message || error);
-    return { valid: false, error: `Authentifizierungsfehler: ${error?.message || 'Unbekannter Fehler'}` };
+    console.error(`Fehler bei PDF-Verarbeitung: ${error.message}`);
+    throw error; // Weitergabe des Fehlers an den Haupthandler
   }
 }
 
-/**
- * Verarbeitet eine PDF-Datei und beantwortet eine Frage dazu mit der Gemini-API
- * @param pdfPath Pfad zur PDF-Datei im Supabase-Bucket
- * @param question Die Frage, die zu dieser PDF beantwortet werden soll
- * @returns Ein Promise, das die Antwort der Gemini-API enthält
- */
-export async function processPdf(pdfPath: string, question: string): Promise<string> {
-  if (!supabase || !genAI) {
-    throw new Error('API-Clients nicht initialisiert');
-  }
-
-  if (!pdfPath || !question) {
-    throw new Error('PDF-Pfad und Frage müssen angegeben werden');
-  }
-
-  logWithTimestamp(`Verarbeite PDF: ${pdfPath} mit Frage: ${question}`);
-
-  // PDF von Supabase herunterladen
-  const tempDir = path.join('/tmp', 'tempo-pdf-processing');
-  await fs.mkdir(tempDir, { recursive: true });
-  const tempFilePath = path.join(tempDir, `temp-${Date.now()}.pdf`);
-
-  try {
-    // PDF von Supabase herunterladen
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .download(pdfPath);
-
-    if (error || !data) {
-      throw new Error(`Fehler beim Herunterladen der PDF: ${error?.message || 'Keine Daten'}`);
-    }
-
-    // PDF als temporäre Datei speichern
-    const buffer = await data.arrayBuffer();
-    await fs.writeFile(tempFilePath, Buffer.from(buffer));
-    logWithTimestamp(`PDF heruntergeladen und gespeichert in: ${tempFilePath}`);
-    
-    // PDF-Größe prüfen
-    const stats = await fs.stat(tempFilePath);
-    const fileSizeInMB = stats.size / (1024 * 1024);
-    logWithTimestamp(`PDF-Größe: ${fileSizeInMB.toFixed(2)} MB`);
-
-    // PDF verarbeiten mit neuester Gemini API
-    logWithTimestamp('Verarbeite PDF mit Google Gemini API...');
-    
-    // In einen Blob konvertieren für die File API
-    const fileContent = await fs.readFile(tempFilePath);
-    const fileBlob = new Blob([fileContent], { type: 'application/pdf' });
-    
-    // PDF-Datei hochladen
-    const file = await genAI.files.upload({
-      file: fileBlob,
-      config: {
-        displayName: path.basename(pdfPath),
-      },
-    });
-    
-    // Sicherstellen, dass file.name definiert ist
-    const fileName = file.name || `unknown-file-${Date.now()}`;
-    logWithTimestamp(`PDF hochgeladen zur Gemini API mit FileID: ${fileName}`);
-    
-    // Auf Verarbeitung warten
-    let getFile = await genAI.files.get({ name: fileName });
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    while (getFile.state === 'PROCESSING' && attempts < maxAttempts) {
-      logWithTimestamp(`Aktueller Datei-Status: ${getFile.state}`);
-      logWithTimestamp('Datei wird noch verarbeitet, erneuter Versuch in 2 Sekunden...');
-      
-      // Warten und erneut prüfen
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      getFile = await genAI.files.get({ name: fileName });
-      attempts++;
-    }
-    
-    if (getFile.state === 'FAILED') {
-      throw new Error('Dateiverarbeitung durch die Google Gemini API fehlgeschlagen');
-    }
-    
-    if (attempts >= maxAttempts && getFile.state === 'PROCESSING') {
-      throw new Error('Zeitüberschreitung bei der Dateiverarbeitung durch die Google Gemini API');
-    }
-    
-    // Frage stellen
-    logWithTimestamp(`Stelle Frage: ${question}`);
-    
-    // Inhalt für die Anfrage vorbereiten
-    const content: Array<{text: string} | ReturnType<typeof createPartFromUri>> = [
-      { text: `Ich habe eine Frage zu diesem PDF: ${question}` }
-    ];
-    
-    // Füge die Datei zum Inhalt hinzu
-    if (file.uri && file.mimeType) {
-      const fileContent = createPartFromUri(file.uri, file.mimeType);
-      content.push(fileContent);
-    }
-    
-    // Anfrage an die Gemini API senden
-    const response = await genAI.models.generateContent({
-      model: MODEL_NAME,
-      contents: content,
-    });
-    
-    // Antwort extrahieren und sicherstellen, dass wir einen String haben
-    const responseText = response?.text ?? "Keine Antwort erhalten";
-    
-    // Konvertiere den Text in HTML
-    const htmlResponse = convertToHtml(responseText);
-    
-    // Aufräumen: Temporäre Datei löschen
-    try {
-      await fs.unlink(tempFilePath);
-      logWithTimestamp('Temporäre PDF-Datei nach Verarbeitung gelöscht');
-    } catch (cleanupError) {
-      console.error('Fehler beim Löschen der temporären Datei:', cleanupError);
-    }
-    
-    return htmlResponse;
-  } catch (error: any) {
-    logWithTimestamp('Fehler bei der PDF-Verarbeitung', error);
-    
-    // Aufräumen, falls die Datei erstellt wurde
-    try {
-      await fs.access(tempFilePath);
-      await fs.unlink(tempFilePath);
-      logWithTimestamp('Temporäre PDF-Datei nach Fehler gelöscht');
-    } catch (e) {
-      // Datei existiert nicht oder kann nicht gelöscht werden, ignorieren
-    }
-    
-    throw error;
-  }
-}
+// -----------------------------------------------------------------------------
+//  HANDLER
+// -----------------------------------------------------------------------------
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS-Präflight-Anfrage
-  if (handleCorsPreflightRequest(req, res)) return;
-  
-  // CORS-Headers setzen
-  const corsHeaders = getCorsHeaders(req);
-  Object.entries(corsHeaders).forEach(([key, value]) => {
-    res.setHeader(key, value);
-  });
+  // Early CORS
+  if (req.method === 'OPTIONS') {
+    respondCors(req, res, 204);
+    return res.end();
+  }
 
-  // Nur POST-Methode erlauben
   if (req.method !== 'POST') {
-    res.status(405).json({ error: 'Nur POST-Methode erlaubt' });
-    return;
+    respondCors(req, res, 405);
+    return res.json({ error: 'Method not allowed' });
   }
 
-  // API-Clients prüfen
-  if (!supabase || !genAI) {
-    res.status(500).json({
-      error: 'Serverfehler: API-Clients nicht initialisiert',
-      details: {
-        supabaseInitialized: !!supabase,
-        genAIInitialized: !!genAI
+  /* ---------- Clerk Auth ---------- */
+  try {
+    // Prüfen ob ein Bearer-Token vorhanden ist
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Bearer-Token aus dem Header extrahieren
+      const token = authHeader.substring(7); // "Bearer " entfernen
+      
+      // Versuche den Token zu validieren
+      try {
+        // Prüfe den JWT direkt mit Clerk
+        // Da Clerk keine direkte verifyJwt-Methode hat, erstellen wir eine minimale Request zur Auth
+        const dummyRequest = new Request("https://api.example.com", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+        
+        // Mit mehreren authorizedParties versuchen
+        // Dadurch kann der Token von verschiedenen Domains akzeptiert werden
+        const authOptions = {
+          authorizedParties: [
+            ...ALLOWED_ORIGINS,
+            "https://api.example.com",
+            "http://localhost:3000", 
+            "http://127.0.0.1:3000"
+          ]
+        };
+        
+        const authResult = await clerk.authenticateRequest(dummyRequest, authOptions);
+        
+        if (!authResult.isSignedIn) {
+          respondCors(req, res, 401);
+          return res.json({ error: "Unauthorized" });
+        }
+      } catch (tokenError) {
+        // Token-Validierung fehlgeschlagen - Zugriff verweigern
+        respondCors(req, res, 401);
+        return res.json({ error: "Invalid token" });
       }
-    });
-    return;
-  }
-
-  // Authentifizierung prüfen
-  const isLocalDevelopment = process.env.NODE_ENV === 'development';
-  let userId = 'default-user';
-  const authResult = await validateAuth(req);
-  
-  if (!authResult.valid) {
-    // Im Entwicklungsmodus trotzdem fortfahren
-    if (!isLocalDevelopment) {
-      return res.status(401).json({ 
-        error: 'Nicht autorisiert', 
-        details: authResult.error,
-        message: 'Bitte stellen Sie sicher, dass ein gültiges Authentifizierungstoken verwendet wird.'
-      });
     } else {
-      console.log('⚠️ Entwicklungsmodus: Fortfahren trotz fehlgeschlagener Authentifizierung');
+      // Cookie-basierte Authentifizierung als Fallback
+      const absoluteUrl = `${req.headers["x-forwarded-proto"] ?? "http"}://${req.headers.host}${req.url}`;
+      const fetchRequest = new Request(absoluteUrl, {
+        method: req.method,
+        headers: req.headers as any,
+      });
+
+      const { isSignedIn } = await clerk.authenticateRequest(fetchRequest, {
+        authorizedParties: ALLOWED_ORIGINS,
+      });
+
+      if (!isSignedIn) {
+        respondCors(req, res, 401);
+        return res.json({ error: "Unauthorized" });
+      }
     }
-  } else {
-    userId = authResult.userId || userId;
+  } catch (authError) {
+    respondCors(req, res, 401);
+    return res.json({ error: "Unauthorized" });
   }
 
   try {
-    // Daten aus dem Request-Body extrahieren
-    const { pdfPath, question } = req.body;
-
-    if (!pdfPath || !question) {
-      return res.status(400).json({ error: 'pdfPath und question sind erforderlich' });
+    // Body parsen und validieren
+    let pdfPath, question;
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      pdfPath = body.pdfPath;
+      question = body.question;
+    } catch (e) {
+      console.error(`Fehler beim Parsen des Request Body: ${req.body}`);
+      throw new Error('Ungültiger Request Body');
     }
 
-    // Verarbeite die PDF und die Frage
+    if (!pdfPath || !question) throw new Error('pdfPath und question erforderlich');
+
     const answer = await processPdf(pdfPath, question);
     
-    // Ergebnisse zurückgeben
-    return res.status(200).json({ answer });
-  } catch (error: any) {
-    console.error('Fehler bei der PDF-Verarbeitung:', error);
+    respondCors(req, res, 200);
+    return res.json({ answer });
+  } catch (err: any) {
+    console.error(`Handler Error: ${err.message}`);
     
-    res.status(500).json({
-      error: 'Fehler bei der PDF-Verarbeitung',
-      message: error.message || 'Unbekannter Fehler',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    respondCors(req, res, 500);
+    return res.json({ error: err.message || 'Unerwarteter Fehler' });
   }
 }
-

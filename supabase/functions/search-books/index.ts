@@ -143,6 +143,51 @@ serve(async (req) => {
       }
 
       console.log(`${embeddingBooks ? embeddingBooks.length : 0} Bücher via Embedding gefunden`);
+      
+      // VERBESSERUNG: Hole vollständige Buchdaten für alle mit dem Embedding gefundenen Bücher
+      let enhancedEmbeddingBooks = embeddingBooks || [];
+      
+      if (embeddingBooks && embeddingBooks.length > 0) {
+        console.log('Hole vollständige Buchdaten für Embedding-Ergebnisse...');
+        
+        // Extrahiere alle IDs der gefundenen Bücher
+        const bookIds = embeddingBooks.map(book => book.id);
+        
+        // Hole vollständige Daten für diese Bücher
+        const { data: fullBooks, error: fullBooksError } = await supabase
+          .from('books')
+          .select('id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by')
+          .in('id', bookIds);
+          
+        if (fullBooksError) {
+          console.error('Fehler beim Abrufen vollständiger Buchdaten:', fullBooksError);
+        } else if (fullBooks && fullBooks.length > 0) {
+          console.log(`${fullBooks.length} vollständige Buchdatensätze abgerufen`);
+          
+          // Debug-Ausgabe für has_pdf in den vollständigen Daten
+          console.log('DEBUG: Vollständige Buchdaten has_pdf Überprüfung:');
+          fullBooks.slice(0, 3).forEach((book, idx) => {
+            console.log(`Buch ${idx} (${book.title}) - has_pdf: ${book.has_pdf} (Typ: ${typeof book.has_pdf})`);
+          });
+          
+          // Erstelle eine Map für schnellen Zugriff auf vollständige Buchdaten
+          const fullBooksMap = new Map(fullBooks.map(book => [book.id, book]));
+          
+          // Ersetze die vorhandenen Daten mit vollständigen Daten, aber behalte similarity
+          enhancedEmbeddingBooks = embeddingBooks.map(book => {
+            const fullBook = fullBooksMap.get(book.id);
+            if (fullBook) {
+              return {
+                ...fullBook,
+                similarity: book.similarity  // Behalte den Ähnlichkeitswert
+              };
+            }
+            return book;  // Fallback zum Original, wenn keine vollständigen Daten
+          });
+          
+          console.log('Embedding-Ergebnisse mit vollständigen Daten ersetzt');
+        }
+      }
 
       // VERBESSERUNG 1: Hybrid-Suche mit Keyword-Suche
       console.log('Führe zusätzlich Keyword-Suche durch...');
@@ -155,7 +200,7 @@ serve(async (req) => {
       }
 
       // Ergebnisse zusammenführen und Duplikate entfernen
-      const mergedBooks = mergeResults(embeddingBooks || [], keywordBooks || [], query);
+      const mergedBooks = mergeResults(enhancedEmbeddingBooks, keywordBooks || [], query);
       console.log(`Insgesamt ${mergedBooks.length} einzigartige Bücher gefunden`);
 
       // Erfolgreiche Antwort senden
@@ -292,7 +337,6 @@ async function getEmbedding(query) {
     throw new Error('OpenAI API Key nicht konfiguriert');
   }
   
-  console.log('OpenAI Key gefunden, Länge:', openAiKey.length);
   console.log('Erstelle Embedding für:', query);
   
   // OpenAI API aufrufen, um ein Embedding für die Suchanfrage zu erstellen
@@ -357,10 +401,10 @@ async function performKeywordSearch(supabase, query) {
   // Zusammenführen der Bedingungen mit OR
   const searchQuery = searchConditions.join(' OR ');
   
-  // Supabase-Abfrage mit OR-Filter
+  // Supabase-Abfrage mit OR-Filter und spezifischen Feldern statt *
   return await supabase
     .from('books')
-    .select('*')
+    .select('id, title, author, isbn, subject, level, year, type, publisher, description, available, location, school, has_pdf, created_at, borrowed_at, borrowed_by')
     .or(searchQuery)
     .limit(20);
 }
@@ -374,6 +418,22 @@ function mergeResults(embeddingResults, keywordResults, originalQuery) {
   // Map erstellen für schnellen Zugriff auf Embedding-Ergebnisse
   const resultsMap = new Map();
   
+  // Debug-Log für has_pdf Verfügbarkeit
+  const hasEmbeddingPdf = embeddingResults.length > 0 ? 'has_pdf' in embeddingResults[0] : false;
+  const hasKeywordPdf = keywordResults.length > 0 ? 'has_pdf' in keywordResults[0] : false;
+  console.log(`DEBUG: has_pdf verfügbar in Embedding-Ergebnissen: ${hasEmbeddingPdf}`);
+  console.log(`DEBUG: has_pdf verfügbar in Keyword-Ergebnissen: ${hasKeywordPdf}`);
+  
+  if (embeddingResults.length > 0) {
+    console.log(`DEBUG: Embedding Buch 0 Felder: ${Object.keys(embeddingResults[0]).join(', ')}`);
+    console.log(`DEBUG: Embedding Buch 0 has_pdf: ${embeddingResults[0].has_pdf}`);
+  }
+  
+  if (keywordResults.length > 0) {
+    console.log(`DEBUG: Keyword Buch 0 Felder: ${Object.keys(keywordResults[0]).join(', ')}`);
+    console.log(`DEBUG: Keyword Buch 0 has_pdf: ${keywordResults[0].has_pdf}`);
+  }
+  
   // Embedding-Ergebnisse zuerst einfügen
   embeddingResults.forEach(book => {
     // Bewerte, wie gut das Buch zu den wichtigen Schlüsselwörtern passt
@@ -382,11 +442,17 @@ function mergeResults(embeddingResults, keywordResults, originalQuery) {
     // Kombinierter Score: Embedding-Ähnlichkeit + Keyword-Match-Score
     const combinedScore = (book.similarity || 0) + keywordMatchScore;
     
+    // Stellen Sie sicher, dass has_pdf ein boolescher Wert ist
+    // Wenn es nicht existiert oder null ist, behandeln wir es als false
+    const hasPdf = typeof book.has_pdf === 'boolean' ? book.has_pdf : 
+                  (book.has_pdf === 'true' || book.has_pdf === true);
+    
     resultsMap.set(book.id, {
       ...book,
       original_similarity: book.similarity,
       keyword_score: keywordMatchScore,
-      similarity: combinedScore // Überschreibe den Similarity-Wert mit dem kombinierten Score
+      similarity: combinedScore, // Überschreibe den Similarity-Wert mit dem kombinierten Score
+      has_pdf: hasPdf // Stelle sicher, dass has_pdf ein boolescher Wert ist
     });
   });
   
@@ -404,16 +470,28 @@ function mergeResults(embeddingResults, keywordResults, originalQuery) {
     const baseScore = 0.5; // Mittlerer Basis-Score für Keyword-Matches
     const combinedScore = baseScore + keywordMatchScore;
     
+    // Stellen Sie sicher, dass has_pdf ein boolescher Wert ist
+    // Wenn es nicht existiert oder null ist, behandeln wir es als false
+    const hasPdf = typeof book.has_pdf === 'boolean' ? book.has_pdf : 
+                  (book.has_pdf === 'true' || book.has_pdf === true);
+    
     resultsMap.set(book.id, {
       ...book,
       original_similarity: null,
       keyword_score: keywordMatchScore,
-      similarity: combinedScore
+      similarity: combinedScore,
+      has_pdf: hasPdf // Stelle sicher, dass has_pdf ein boolescher Wert ist
     });
   });
   
   // In Array umwandeln und nach kombiniertem Score sortieren
   const mergedResults = Array.from(resultsMap.values());
+  
+  // Erzeuge Debug-Logs für die ersten Bücher
+  if (mergedResults.length > 0) {
+    console.log(`DEBUG: Endgültiges Buch 0 has_pdf: ${mergedResults[0].has_pdf} (Typ: ${typeof mergedResults[0].has_pdf})`);
+  }
+  
   return mergedResults.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
 }
 

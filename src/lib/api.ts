@@ -59,14 +59,13 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
       publisher: data.publisher || "",
     };
   } catch (error) {
-    console.error("Error fetching book info:", error);
     throw error;
   }
 }
 
 /**
  * Sendet eine Frage zu einer PDF-Datei an die processPdf-API und gibt die Antwort zurück
- * @param pdfPath Der Pfad zur PDF-Datei im Supabase-Bucket
+ * @param pdfPath Der Pfad zur PDF-Datei im Cloudflare R2 Bucket
  * @param question Die Frage, die zu dieser PDF beantwortet werden soll
  * @param authToken Optionaler Auth-Token für authentifizierte Anfragen
  * @returns Die Antwort der Gemini-API
@@ -77,17 +76,16 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
     const endpoint = `${baseUrl}/api/processPdf`;
 
-    // API Key holen - verwende authToken falls vorhanden
-    const apiKey = authToken || getApiKey();
-
     // Headers vorbereiten
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      // Authentifizierungsheader hinzufügen - wir verwenden den Token oder den anonymen API-Key
-      "Authorization": `Bearer ${apiKey}`,
     };
     
-    // API-Anfrage senden
+    // Auth-Token hinzufügen, falls vorhanden
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    
     const response = await fetch(endpoint, {
       method: "POST",
       headers,
@@ -106,8 +104,56 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
     }
 
     return data.answer;
+  } catch (error: any) {
+    throw error;
+  }
+}
+
+/**
+ * Ruft die Liste der verfügbaren PDF-Dateien vom API-Endpunkt ab
+ * @param authToken Der JWT-Token für die Authentifizierung
+ * @returns Eine Liste mit PDF-Datei-Informationen
+ */
+export async function fetchPdfs(authToken?: string) {
+  try {
+    // Basis-URL aus der Umgebung lesen
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const endpoint = `${apiUrl}/api/listPdfs`;
+
+    // Headers vorbereiten
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    
+    // Auth-Token hinzufügen, falls vorhanden
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    
+    // Cache-busting Parameter für die API-Anfrage hinzufügen
+    const cacheBuster = Date.now();
+    const requestUrl = `${endpoint}?_cb=${cacheBuster}`;
+    
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers,
+      // Cache-Kontrolle hinzufügen
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || 'Unbekannter Fehler'}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data || !data.files) {
+      throw new Error("Keine gültigen Daten von der API erhalten");
+    }
+
+    return data.files;
   } catch (error) {
-    console.error("Fehler beim Abfragen der PDF:", error);
     throw error;
   }
 }

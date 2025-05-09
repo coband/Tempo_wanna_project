@@ -7,12 +7,12 @@
     "skipLibCheck": true,
     "noEmitOnError": false,
 
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "allowSyntheticDefaultImports": true,
 
     "strict": false,
     "paths": {

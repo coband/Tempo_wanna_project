@@ -501,99 +501,88 @@ export function BookFilter({
     </div>
   );
   
-  return (
-    <div className="mb-6">
-      {isMobile ? (
-        <Collapsible 
-          open={isFilterOpen}
-          onOpenChange={setIsFilterOpen}
-          className="mb-4"
-          defaultOpen={false}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <CollapsibleTrigger asChild>
-              <Button 
-                variant="outline" 
-                className="w-full flex items-center justify-between"
-                onClick={() => setIsFilterOpen(!isFilterOpen)}
-              >
-                <div className="flex items-center">
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+  // Mobile Filter-Button mit Dropdown
+  if (isMobile) {
+    return (
+      <div className="px-4 mb-3 mt-3">
+        <div className="flex justify-between items-center">
+          <Collapsible 
+            open={isFilterOpen} 
+            onOpenChange={setIsFilterOpen}
+            className="w-full"
+          >
+            <div className="flex justify-between items-center">
+              <CollapsibleTrigger asChild>
+                <Button variant="outline" className="mb-2">
+                  <Filter className="h-4 w-4 mr-2" />
                   <span>Filter</span>
                   {activeFilterCount > 0 && (
-                    <Badge variant="secondary" className="ml-2">
+                    <Badge 
+                      variant="secondary" 
+                      className="ml-2 bg-blue-100 text-blue-800 hover:bg-blue-100"
+                    >
                       {activeFilterCount}
                     </Badge>
                   )}
-                </div>
-                <ChevronDown 
-                  className={`h-4 w-4 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`}
-                />
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          {!isInitialRender && (
-            <CollapsibleContent>
+                </Button>
+              </CollapsibleTrigger>
+              
+              {hasActiveFilters && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClearFilters();
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <XCircle className="h-4 w-4 mr-1" />
+                  <span>Zurücksetzen</span>
+                </Button>
+              )}
+            </div>
+            <CollapsibleContent className="mt-2">
               <FilterContent />
             </CollapsibleContent>
-          )}
-        </Collapsible>
-      ) : (
-        <div className="mb-4">
-          <FilterContent />
+          </Collapsible>
         </div>
-      )}
-      
-      {/* Aktive Filter anzeigen und Reset-Button */}
-      {hasActiveFilters && (
-        <div className="flex flex-col sm:flex-row sm:justify-between mb-4">
-          <div className="flex flex-wrap gap-2 mb-2 sm:mb-0">
-            {selectedLevels.length > 0 && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Stufen: {selectedLevels.join(', ')}
-              </Badge>
-            )}
-            {selectedSchool && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Schulhaus: {selectedSchool}
-              </Badge>
-            )}
-            {selectedType && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Typ: {selectedType}
-              </Badge>
-            )}
-            {selectedSubjects.length > 0 && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Fächer: {selectedSubjects.join(', ')}
-              </Badge>
-            )}
-            {(selectedYearRange[0] !== yearRange[0] || selectedYearRange[1] !== yearRange[1]) && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Jahr: {selectedYearRange[0]} - {selectedYearRange[1]}
-              </Badge>
-            )}
-            {selectedAvailability !== null && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Verfügbarkeit: {selectedAvailability ? 'Verfügbar' : 'Ausgeliehen'}
-              </Badge>
-            )}
-            {selectedLocation && (
-              <Badge variant="secondary" className="px-2 py-1">
-                Standort: {selectedLocation}
-              </Badge>
+      </div>
+    );
+  }
+
+  // Desktop Filter mit festen Checkboxen
+  return (
+    <div className="px-4 mb-3 mt-3">
+      {isInitialRender ? null : (
+        <div className="flex flex-col">
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center">
+              <SlidersHorizontal className="h-4 w-4 mr-2 text-gray-500" />
+              <h3 className="text-lg font-medium">Filter</h3>
+              {activeFilterCount > 0 && (
+                <Badge 
+                  variant="secondary" 
+                  className="ml-2 bg-blue-100 text-blue-800 hover:bg-blue-100"
+                >
+                  {activeFilterCount}
+                </Badge>
+              )}
+            </div>
+            
+            {hasActiveFilters && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={onClearFilters}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XCircle className="h-4 w-4 mr-1" />
+                <span>Filter zurücksetzen</span>
+              </Button>
             )}
           </div>
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={onClearFilters}
-            className="flex items-center gap-1"
-          >
-            <XCircle className="h-4 w-4" />
-            Filter zurücksetzen
-          </Button>
+          <FilterContent />
         </div>
       )}
     </div>

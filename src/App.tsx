@@ -6,9 +6,10 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { UserManagement } from "./components/admin/UserManagement";
 import BulkImportBooks from "./components/admin/BulkImportBooks";
 import routes from "tempo-routes";
-import { useAuth } from "./lib/auth";
+import { useAuth } from "./hooks/useAuth";
 import { SignIn, SignUp } from "@clerk/clerk-react";
 import PdfChatPage from "./pages/PdfChatPage";
+import Dashboard from "./components/dashboard/Dashboard";
 
 // Komponente für die Prüfung von Admin- und Superadmin-Rechten
 const AdminRoute = ({ children, requireSuperAdmin = false }: { children: React.ReactNode, requireSuperAdmin?: boolean }) => {
@@ -53,9 +54,6 @@ const CenteredSignUp = () => {
 function App() {
   return (
     <Suspense fallback={<p>Loading...</p>}>
-      {/* Tempo routes */}
-      {import.meta.env.VITE_TEMPO && useRoutes(routes)}
-
       <Routes>
         <Route path="/" element={<Home />} />
         {/* Clerk Auth Routen mit zentrierten Komponenten */}
@@ -65,12 +63,22 @@ function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/books"
+          element={
+            <ProtectedRoute>
               <BookManagement />
             </ProtectedRoute>
           }
         />
         {/* PDF Chat Route */}
         <Route path="/pdf-chat" element={<PdfChatPage />} />
+        {/* Chat Route mit ID Parameter */}
+        <Route path="/chat/:id" element={<PdfChatPage />} />
         {/* Admin-Routen */}
         <Route
           path="/admin/users"
@@ -88,8 +96,6 @@ function App() {
             </AdminRoute>
           }
         />
-        {/* Add this before any catchall route */}
-        {import.meta.env.VITE_TEMPO && <Route path="/tempobook/*" />}
       </Routes>
     </Suspense>
   );

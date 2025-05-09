@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
-import { useAuth } from "@/lib/auth";
-import BookDetails from "./books/BookDetails.tsx";
+import { useAuth } from "@/hooks/useAuth";
+import BookDetails from "./books/BookDetails";
 import { Badge } from "./ui/badge";
 import {
   Tooltip,
@@ -11,11 +11,10 @@ import {
 } from "./ui/tooltip";
 import { Button } from "./ui/button";
 import { BookForm } from "./books/BookForm";
-import { Book, NewBook, BookUpdate } from "@/lib/books";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
+import { FetchedBook, Book as FullBookType } from "./dashboard/BookManagement";
+import { NewBook, BookUpdate } from "@/lib/books";
+import { useSupabase } from '@/contexts/SupabaseContext';
 import { useToast } from "./ui/use-toast";
-import { BookFilter } from "./books/BookFilter";
-import { LEVELS, SUBJECTS, BOOK_TYPES, SCHOOLS, LOCATIONS, YEAR_RANGE } from "@/lib/constants";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,114 +29,31 @@ import { Edit, Plus, Trash2, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface BookGridProps {
-  books?: Book[];
+  books?: FetchedBook[];
   onBookChange?: () => void;
-}
-
-interface FilterValues {
-  level: string[];
-  school: string;
-  type: string;
-  subject: string[];
-  year: [number, number];
-  available: boolean | null;
-  location: string;
 }
 
 export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
   const { isAdmin } = useAuth();
-  const { supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
   const navigate = useNavigate();
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [selectedBook, setSelectedBook] = useState<FetchedBook | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const { toast } = useToast();
   
-  // Filter-States
-  const [filteredBooks, setFilteredBooks] = useState<Book[]>(books);
-  const [activeFilters, setActiveFilters] = useState<Partial<FilterValues>>({
-    available: null
-  });
-
-  // Filter books when books array or filters change
-  useEffect(() => {
-    filterBooks(books, activeFilters);
-  }, [books, activeFilters]);
-
-  const filterBooks = (books: Book[], filters: Partial<FilterValues>) => {
-    // If no filters are active, show all books
-    if (Object.keys(filters).length === 0) {
-      setFilteredBooks(books);
-      return;
-    }
-
-    // Apply filters
-    const filtered = books.filter((book) => {
-      // For each filter category
-      if (filters.level && filters.level.length > 0) {
-        const bookLevels = book.level?.split(', ') || [];
-        if (!filters.level.some(level => bookLevels.includes(level))) {
-          return false;
-        }
-      }
-
-      if (filters.school && book.school !== filters.school) {
-        return false;
-      }
-
-      if (filters.type && book.type !== filters.type) {
-        return false;
-      }
-
-      if (filters.subject && filters.subject.length > 0) {
-        if (!filters.subject.includes(book.subject)) {
-          return false;
-        }
-      }
-
-      if (filters.year) {
-        const [min, max] = filters.year;
-        if (book.year < min || book.year > max) {
-          return false;
-        }
-      }
-
-      if (filters.available !== null && filters.available !== undefined) {
-        if (book.available !== filters.available) {
-          return false;
-        }
-      }
-
-      if (filters.location && book.location !== filters.location) {
-        return false;
-      }
-
-      return true;
-    });
-
-    setFilteredBooks(filtered);
-  };
-
-  const handleFilterChange = (category: keyof FilterValues, value: any) => {
-    setActiveFilters((prev) => ({
-      ...prev,
-      [category]: value
-    }));
-  };
-
-  const handleAdd = async (book: NewBook) => {
+  const handleAdd = async (bookData: NewBook) => {
     try {
       // Zuerst prüfen, ob ein Buch mit dieser ISBN bereits existiert
       const { data: existingBook, error: queryError } = await supabase
         .from("books")
         .select("id, title")
-        .eq("isbn", book.isbn)
+        .eq("isbn", bookData.isbn)
         .maybeSingle();
 
       if (queryError) {
-        console.error("Fehler bei der Prüfung auf bestehendes Buch:", queryError);
         throw queryError;
       }
 
@@ -146,7 +62,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         toast({
           variant: "destructive",
           title: "Duplikat",
-          description: `Ein Buch mit der ISBN ${book.isbn} existiert bereits: "${existingBook.title}"`
+          description: `Ein Buch mit der ISBN ${bookData.isbn} existiert bereits: "${existingBook.title}"`
         });
         throw new Error(`Ein Buch mit dieser ISBN existiert bereits: ${existingBook.title}`);
       }
@@ -154,7 +70,7 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")
-        .insert(book)
+        .insert(bookData)
         .select();
       
       if (error) throw error;
@@ -162,18 +78,16 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
       // Wenn ein Embedding erstellt werden soll, rufe die Edge-Funktion auf
       if (data && data.length > 0) {
         const newBookId = data[0].id;
+        const createdBook = data[0] as FullBookType;
         
         try {
           // Rufe die createEmbeddings-Funktion mit dem authentifizierten Client auf
-          console.log("Erstelle Embedding für Buch:", newBookId);
           const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
             body: { book_id: newBookId }
           });
           
           if (embeddingError) {
             console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
-          } else {
-            console.log("Embedding erfolgreich erstellt:", embeddingData);
           }
         } catch (err) {
           console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
@@ -188,8 +102,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich hinzugefügt."
       });
     } catch (error) {
-      console.error("Error adding book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -200,32 +112,32 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     }
   };
   
-  const handleUpdate = async (book: BookUpdate) => {
+  const handleUpdate = async (bookData: BookUpdate) => {
     try {
       // Verwende den authentifizierten Client
       const { data, error } = await supabase
         .from("books")
-        .update(book)
-        .eq("id", book.id)
+        .update(bookData)
+        .eq("id", bookData.id)
         .select();
       
       if (error) throw error;
       
       // Wenn das Embedding neu erstellt werden sollte
-      if (data && data.length > 0 && (data[0] as Book).embedding === null) {
-        try {
-          console.log("Erstelle Embedding für aktualisiertes Buch:", book.id);
-          const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
-            body: { book_id: book.id }
-          });
-          
-          if (embeddingError) {
-            console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
-          } else {
-            console.log("Embedding erfolgreich erstellt:", embeddingData);
+      if (data && data.length > 0) {
+        const updatedBook = data[0] as FullBookType;
+        if (updatedBook.embedding === null) {
+          try {
+            const { data: embeddingData, error: embeddingError } = await supabase.functions.invoke('createEmbeddings', {
+              body: { book_id: bookData.id }
+            });
+            
+            if (embeddingError) {
+              console.warn("Fehler beim Erstellen des Embeddings:", embeddingError);
+            }
+          } catch (err) {
+            console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
           }
-        } catch (err) {
-          console.warn("Fehler beim Aufruf der Embedding-Funktion:", err);
         }
       }
       
@@ -236,8 +148,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich aktualisiert."
       });
     } catch (error) {
-      console.error("Error updating book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -267,8 +177,6 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
         description: "Das Buch wurde erfolgreich gelöscht."
       });
     } catch (error) {
-      console.error("Error deleting book:", error);
-      
       toast({
         variant: "destructive",
         title: "Fehler",
@@ -277,82 +185,16 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
     }
   };
 
-  // Funktion zum Finden und Öffnen des PDFs
-  const openPdfChat = async (book: Book) => {
-    try {
-      const bucketName = import.meta.env.VITE_PDF_BUCKET_NAME || 'books';
-      
-      // PDFs im Bucket auflisten
-      const { data, error } = await supabase.storage
-        .from(bucketName)
-        .list();
-      
-      if (error) {
-        throw error;
-      }
-      
-      if (!data || data.length === 0) {
-        throw new Error("Keine PDFs gefunden");
-      }
-      
-      // Nach PDF mit der ISBN als Präfix suchen
-      const pdfNamePattern = new RegExp(`^${book.isbn}_.*\\.pdf$`, 'i');
-      const matchingPdf = data.find(file => pdfNamePattern.test(file.name));
-      
-      if (!matchingPdf) {
-        throw new Error(`Kein PDF mit ISBN ${book.isbn} gefunden`);
-      }
-      
-      // PDF gefunden, navigiere zur PDF-Chat-Seite mit dem PDF als Parameter
-      navigate(`/pdf-chat?pdf=${encodeURIComponent(matchingPdf.name)}`);
-      
-    } catch (error: any) {
-      console.error("Fehler beim Öffnen des PDF-Chats:", error);
-      toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: error.message || "Das PDF konnte nicht geladen werden."
-      });
-    }
+  // Funktion zum Öffnen des PDF-Chats
+  const openPdfChat = (book: FetchedBook) => {
+    navigate(`/chat/${book.id}`);
   };
 
   return (
     <div className="p-4">
-      {/* Filter-Abschnitt */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-4">Filter</h2>
-        <BookFilter
-          levels={LEVELS}
-          schools={SCHOOLS}
-          types={BOOK_TYPES}
-          subjects={SUBJECTS}
-          yearRange={YEAR_RANGE}
-          locations={LOCATIONS}
-          selectedLevels={activeFilters.level || []}
-          selectedSchool={activeFilters.school || ""}
-          selectedType={activeFilters.type || ""}
-          selectedSubjects={activeFilters.subject || []}
-          selectedYearRange={activeFilters.year || YEAR_RANGE}
-          selectedAvailability={activeFilters.available}
-          selectedLocation={activeFilters.location || ""}
-          onLevelChange={(values) => handleFilterChange("level", values)}
-          onSchoolChange={(value) => handleFilterChange("school", value)}
-          onTypeChange={(value) => handleFilterChange("type", value)}
-          onSubjectChange={(values) => handleFilterChange("subject", values)}
-          onYearRangeChange={(values) => handleFilterChange("year", values)}
-          onAvailabilityChange={(value) => handleFilterChange("available", value)}
-          onLocationChange={(value) => handleFilterChange("location", value)}
-          onClearFilters={() => {
-            setActiveFilters({
-              available: null
-            });
-          }}
-        />
-      </div>
-
       {/* Add Button für Admins */}
       {isAdmin && (
-        <div className="mb-6">
+        <div className="mb-3">
           <Button
             onClick={() => {
               setSelectedBook(null);
@@ -368,8 +210,8 @@ export default function BookGrid({ books = [], onBookChange }: BookGridProps) {
 
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {Array.isArray(filteredBooks) && filteredBooks.length > 0 ? (
-          filteredBooks.map((book) => (
+        {Array.isArray(books) && books.length > 0 ? (
+          books.map((book) => (
             <Card
               key={book.id}
               className="overflow-hidden transition-all duration-200 hover:shadow-sm flex flex-col cursor-pointer"

@@ -12,6 +12,9 @@
     "types:supabase": "npx supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/types/supabase.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@aws-sdk/s3-request-presigner": "^3.787.0",
+    "@clerk/backend": "^1.30.0",
     "@clerk/clerk-react": "^5.24.1",
     "@ericblade/quagga2": "^1.8.4",
     "@google/genai": "^0.9.0",
@@ -56,11 +59,13 @@
     "html5-qrcode": "^2.3.8",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.394.0",
+    "node-fetch": "^2.7.0",
     "react": "^18.2.0",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.51.5",
     "react-hot-toast": "^2.5.2",
+    "react-markdown": "^10.1.0",
     "react-resizable-panels": "^2.0.19",
     "react-router": "^6.23.1",
     "react-router-dom": "^6.23.1",

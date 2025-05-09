@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogTitle, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogClose, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { useAuth } from "@/lib/auth";
-import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
-import type { Book } from "@/lib/books";
-import { ArrowLeft, X, ChevronLeft } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useSupabase } from '@/contexts/SupabaseContext';
+import type { FetchedBook, Book as FullBookType } from "../dashboard/BookManagement";
+import { ArrowLeft, X, ChevronLeft, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface BookDetailsProps {
-  book: Book;
+  book: FetchedBook;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBookChange?: () => void;
@@ -23,11 +24,12 @@ function BookDetails({
 }: BookDetailsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
-  const [bookData, setBookData] = useState<Book | null>(null);
+  const [bookData, setBookData] = useState<FetchedBook | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
-  const { supabase } = useSupabaseAuth();
+  const supabase = useSupabase();
+  const navigate = useNavigate();
 
   // Mobile Erkennung
   useEffect(() => {
@@ -45,18 +47,6 @@ function BookDetails({
     return () => window.removeEventListener('resize', checkIfMobile);
   }, []);
 
-  // Debug-Ausgabe der Buchdaten
-  useEffect(() => {
-    if (open && initialBook) {
-      console.log("Initial book data:", {
-        id: initialBook.id,
-        title: initialBook.title,
-        available: initialBook.available,
-        availableType: typeof initialBook.available
-      });
-    }
-  }, [initialBook, open]);
-
   // Lade vollständige Buchdaten beim Öffnen des Dialogs
   useEffect(() => {
     if (!open || !initialBook?.id) return;
@@ -64,37 +54,26 @@ function BookDetails({
     const fetchCompleteBookData = async () => {
       try {
         setIsDataLoading(true);
-        console.log(`Lade vollständige Daten für Buch mit ID ${initialBook.id}...`);
         
         // Direktes Laden aus der Datenbank mit Fokus auf Verfügbarkeit
         const { data, error } = await supabase
           .from("books")
-          .select("*")
+          .select("id, title, author, isbn, year, location, subject, level, type, publisher, description, available, borrowed_at, borrowed_by, has_pdf")
           .eq("id", initialBook.id)
           .single();
           
         if (error) {
-          console.error("Fehler beim Laden der vollständigen Buchdaten:", error);
           // Fallback auf initialBook bei Fehler
           setBookData(initialBook);
           return;
         }
         
         if (data) {
-          console.log("Geladene Buchdaten aus DB:", {
-            id: data.id,
-            title: data.title,
-            available: data.available,
-            availableType: typeof data.available
-          });
-          
-          setBookData(data as unknown as Book);
+          setBookData(data as unknown as FetchedBook);
         } else {
-          console.warn("Keine Daten für Buch mit ID", initialBook.id, "gefunden");
           setBookData(initialBook);
         }
       } catch (err) {
-        console.error("Fehler beim Laden der Buchdaten:", err);
         setBookData(initialBook);
       } finally {
         setIsDataLoading(false);
@@ -110,6 +89,9 @@ function BookDetails({
   // Bestimme den Verfügbarkeitsstatus eindeutig
   // Explizite Konvertierung zu Boolean für konsistente Behandlung
   const isAvailable = bookData ? Boolean(bookData.available) : Boolean(initialBook.available);
+  
+  // PDF verfügbar?
+  const hasPdf = bookData ? Boolean(bookData.has_pdf) : Boolean(initialBook.has_pdf);
   
   // Check if the current user is the one who borrowed the book
   const isBookBorrowedByCurrentUser = book.borrowed_by === user?.id;
@@ -146,8 +128,6 @@ function BookDetails({
             borrowed_at: null,
             borrowed_by: null,
           };
-
-      console.log("Aktualisiere Buch mit Daten:", updateData);
       
       const { error } = await supabase
         .from("books")
@@ -173,7 +153,6 @@ function BookDetails({
         onBookChange();
       }
     } catch (error) {
-      console.error("Error toggling availability:", error);
       toast({
         variant: "destructive",
         title: "Error",
@@ -181,6 +160,20 @@ function BookDetails({
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Handler für das Öffnen des PDF-Chats
+  const handleOpenPdfChat = () => {
+    try {
+      // Direkt zur neuen Chat-Route navigieren mit der Buch-ID
+      navigate(`/chat/${book.id}`);
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Fehler beim Öffnen des PDF-Chats",
+        description: error.message || "Das PDF konnte nicht geladen werden."
+      });
     }
   };
 
@@ -198,21 +191,34 @@ function BookDetails({
           <ChevronLeft className="h-5 w-5 mr-1" />
           <span>Zurück</span>
         </button>
-        <Button
-          onClick={handleAvailabilityToggle}
-          disabled={isButtonDisabled}
-          variant={isAvailable ? "default" : "secondary"}
-          size="sm"
-        >
-          {(isLoading || isDataLoading) && (
-            <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+        <div className="flex gap-2">
+          {hasPdf && (
+            <Button
+              onClick={handleOpenPdfChat}
+              variant="outline"
+              size="sm"
+              className="bg-blue-50 hover:bg-blue-100 text-blue-600"
+            >
+              <MessageCircle className="h-4 w-4 mr-1" />
+              <span>Chat mit PDF</span>
+            </Button>
           )}
-          {isAvailable
-            ? "Ausleihen"
-            : isBookBorrowedByCurrentUser
-              ? "Zurückgeben"
-              : "Ausgeliehen"}
-        </Button>
+          <Button
+            onClick={handleAvailabilityToggle}
+            disabled={isButtonDisabled}
+            variant={isAvailable ? "default" : "secondary"}
+            size="sm"
+          >
+            {(isLoading || isDataLoading) && (
+              <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+            )}
+            {isAvailable
+              ? "Ausleihen"
+              : isBookBorrowedByCurrentUser
+                ? "Zurückgeben"
+                : "Ausgeliehen"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -235,6 +241,9 @@ function BookDetails({
           flexDirection: 'column'
         } : {}}
       >
+        <DialogDescription className="sr-only">
+          Detailansicht für das Buch {book.title} von {book.author}
+        </DialogDescription>
         {isMobile ? (
           <>
             <MobileHeader />
@@ -341,21 +350,33 @@ function BookDetails({
                 {book.level && <Badge variant="outline">{book.level}</Badge>}
                 {book.type && <Badge variant="outline" className="bg-gray-100">{book.type}</Badge>}
               </div>
-              <Button
-                onClick={handleAvailabilityToggle}
-                disabled={isButtonDisabled}
-                variant={isAvailable ? "default" : "secondary"}
-                className="ml-2"
-              >
-                {(isLoading || isDataLoading) && (
-                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+              <div className="flex gap-2">
+                {hasPdf && (
+                  <Button
+                    onClick={handleOpenPdfChat}
+                    variant="outline"
+                    className="bg-blue-50 hover:bg-blue-100 text-blue-600"
+                  >
+                    <MessageCircle className="h-4 w-4 mr-1" />
+                    <span>Chat mit PDF</span>
+                  </Button>
                 )}
-                {isAvailable
-                  ? "Ausleihen"
-                  : isBookBorrowedByCurrentUser
-                    ? "Zurückgeben"
-                    : "Ausgeliehen"}
-              </Button>
+                <Button
+                  onClick={handleAvailabilityToggle}
+                  disabled={isButtonDisabled}
+                  variant={isAvailable ? "default" : "secondary"}
+                  className="ml-2"
+                >
+                  {(isLoading || isDataLoading) && (
+                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent" />
+                  )}
+                  {isAvailable
+                    ? "Ausleihen"
+                    : isBookBorrowedByCurrentUser
+                      ? "Zurückgeben"
+                      : "Ausgeliehen"}
+                </Button>
+              </div>
             </div>
 
             <div className="p-6 space-y-4">

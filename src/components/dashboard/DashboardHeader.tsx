@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, Users, BookOpen, Upload, Menu, X, FileText } from "lucide-react";
+import { LogOut, Users, BookOpen, Upload, Menu, X, FileText, LayoutDashboard } from "lucide-react";
 import { UserButton } from "@clerk/clerk-react";
 import { useState } from "react";
 
@@ -27,6 +27,15 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
       <Link
         to="/dashboard"
         className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/dashboard')}`}
+        onClick={() => setMobileMenuOpen(false)}
+      >
+        <LayoutDashboard className="h-5 w-5 mr-2" />
+        <span>Dashboard</span>
+      </Link>
+
+      <Link
+        to="/books"
+        className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/books')}`}
         onClick={() => setMobileMenuOpen(false)}
       >
         <BookOpen className="h-5 w-5 mr-2" />
@@ -72,9 +81,11 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
     <header className={`border-b bg-white ${className}`}>
       <div className="flex h-16 items-center px-4 w-full justify-between">
         <div className="flex items-center">
-          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600 mr-6">
-            Wanna
-          </h2>
+          <Link to="/dashboard">
+            <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600 mr-6">
+              Wanna
+            </h2>
+          </Link>
           
           {/* Desktop Navigation Links */}
           <nav className="hidden md:flex space-x-2">
