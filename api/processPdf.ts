@@ -54,7 +54,11 @@ const MODEL_NAME             = 'gemini-2.5-flash-preview-04-17'; // Aktuelles Mo
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'https://your‑frontend.com'
+  'https://your‑frontend.com',
+  'https://www.wanna-books.ch',
+  'https://wanna-books.ch',
+  'https://tempo-wanna-project.vercel.app',
+  'https://tempo-wanna-project-cornelbandli.vercel.app'
 ];
 
 // Maximum size for initial text extraction from PDF (5 MB)

@@ -51,6 +51,10 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "https://your-frontend.com",
+  "https://www.wanna-books.ch",
+  "https://wanna-books.ch",
+  "https://tempo-wanna-project.vercel.app",
+  "https://tempo-wanna-project-cornelbandli.vercel.app"
 ];
 
 function respondCors(req: VercelRequest, res: VercelResponse, status = 200) {
