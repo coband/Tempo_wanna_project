@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, Users, BookOpen, Upload, Menu, X, FileText } from "lucide-react";
+import { LogOut, Users, BookOpen, Upload, Menu, X, FileText, LayoutDashboard } from "lucide-react";
 import { UserButton } from "@clerk/clerk-react";
 import { useState } from "react";
 
@@ -29,7 +29,7 @@ export function DashboardHeader({ className = "" }: DashboardHeaderProps) {
         className={`flex items-center px-3 py-2 rounded-md hover:bg-gray-100 text-gray-700 ${isActive('/dashboard')}`}
         onClick={() => setMobileMenuOpen(false)}
       >
-        <BookOpen className="h-5 w-5 mr-2" />
+        <LayoutDashboard className="h-5 w-5 mr-2" />
         <span>Dashboard</span>
       </Link>
 
