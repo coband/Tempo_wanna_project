@@ -17,7 +17,7 @@ assertEnv("CF_ACCOUNT_ID");
 assertEnv("CF_R2_ACCESS_KEY_ID");
 assertEnv("CF_R2_SECRET_ACCESS_KEY");
 assertEnv("CLERK_SECRET_KEY");
-assertEnv("CLERK_PUBLISHABLE_KEY");
+assertEnv("VITE_CLERK_PUBLISHABLE_KEY");
 
 const R2_BUCKET_NAME        = process.env.R2_BUCKET_NAME || "books";
 const R2_ACCOUNT_ID         = process.env.CF_ACCOUNT_ID!;
@@ -41,7 +41,7 @@ const r2Client = new S3Client({
 /* -------------------------------------------------------------------------- */
 const clerk = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY!,
-  publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
+  publishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY!,
 });
 
 /* -------------------------------------------------------------------------- */
@@ -161,6 +161,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   /* ---------- Direkter Abruf von R2 ---------- */
   try {
+    // Debugging: Bucket-Name protokollieren
+    console.log(`Verwende R2-Bucket: ${R2_BUCKET_NAME}`);
+    
     const { Contents = [] } = await r2Client.send(
       new ListObjectsV2Command({
         Bucket: R2_BUCKET_NAME,
@@ -179,8 +182,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader("Cache-Control", "no-store");
     return res.json({ files });
   } catch (error: any) {
+    // Detailliertere Fehlermeldung
     console.error(`Fehler beim Abrufen der Dateien: ${error.message || "Unbekannter Fehler"}`);
+    console.error(`Fehlerdetails: ${JSON.stringify(error)}`);
+    
+    // Spezifische Fehler identifizieren
+    let errorMessage = error.message || "Unexpected error";
+    if (errorMessage.includes("credential") || errorMessage.includes("Credential")) {
+      errorMessage = "R2 Anmeldedaten ungültig oder nicht verfügbar";
+    } else if (errorMessage.includes("bucket") || errorMessage.includes("Bucket")) {
+      errorMessage = `Bucket '${R2_BUCKET_NAME}' nicht gefunden oder nicht zugänglich`;
+    } else if (errorMessage.includes("NetworkError") || errorMessage.includes("network")) {
+      errorMessage = "Netzwerkfehler bei der Verbindung zu Cloudflare R2";
+    }
+    
     respondCors(req, res, 500);
-    return res.json({ error: error.message || "Unexpected error" });
+    return res.json({ 
+      error: errorMessage,
+      details: process.env.NODE_ENV === "development" ? error.toString() : undefined
+    });
   }
 }

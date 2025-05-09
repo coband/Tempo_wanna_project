@@ -35,7 +35,7 @@ assertEnv('CF_ACCOUNT_ID');
 assertEnv('CF_R2_ACCESS_KEY_ID');
 assertEnv('CF_R2_SECRET_ACCESS_KEY');
 assertEnv('CLERK_SECRET_KEY');
-assertEnv('CLERK_PUBLISHABLE_KEY');
+assertEnv('VITE_CLERK_PUBLISHABLE_KEY');
 
 // -----------------------------------------------------------------------------
 //  CONFIG
@@ -121,7 +121,7 @@ const r2Client = new S3Client({
 // Clerk Client für die Authentifizierung
 const clerk = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY!,
-  publishableKey: process.env.CLERK_PUBLISHABLE_KEY!,
+  publishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY!,
 });
 
 // -----------------------------------------------------------------------------
