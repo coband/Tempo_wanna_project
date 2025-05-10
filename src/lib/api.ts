@@ -72,9 +72,8 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
  */
 export async function askPdfQuestion(pdfPath: string, question: string, authToken?: string) {
   try {
-    // Basis-URL aus der Umgebung lesen
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    const endpoint = `${baseUrl}/api/processPdf`;
+    // Verwende die Cloudflare Pages Function direkt
+    const endpoint = "/api/processPdf";
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
@@ -116,9 +115,8 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
  */
 export async function fetchPdfs(authToken?: string) {
   try {
-    // Basis-URL aus der Umgebung lesen
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    const endpoint = `${apiUrl}/api/listPdfs`;
+    // Verwende die Cloudflare Pages Function direkt
+    const endpoint = "/api/listPdfs";
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
