@@ -4,16 +4,10 @@ import { R2Bucket, R2ListOptions } from "@cloudflare/workers-types";
 
 // Definieren Sie ein Interface für Ihre Umgebungsvariablen
 interface Env {
-  // Entferne: CF_ACCOUNT_ID, CF_R2_ACCESS_KEY_ID, CF_R2_SECRET_ACCESS_KEY
-  // (wenn sie nur für den S3-Client verwendet wurden)
-  // Behalte CF_ACCOUNT_ID, wenn es für andere Zwecke benötigt wird.
-
-  CLERK_SECRET_KEY: string;
-  VITE_CLERK_PUBLISHABLE_KEY: string;
-  R2_BUCKET_NAME_ENV?: string; // Optional, wenn der Bucket-Name auch programmatisch benötigt wird,
-                               // ansonsten wird der Name aus dem Binding in wrangler.toml verwendet.
-
-  R2_BUCKET_BINDING: R2Bucket; // Das ist dein R2 Binding
+  CLERK_SECRET_KEY?: string; // Optional gemacht für den Test
+  VITE_CLERK_PUBLISHABLE_KEY?: string; // Optional gemacht für den Test
+  R2_BUCKET_NAME_ENV?: string;
+  R2_BUCKET_BINDING: R2Bucket;
   NODE_ENV?: string;
 }
 
