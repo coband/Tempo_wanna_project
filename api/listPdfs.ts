@@ -54,7 +54,8 @@ const ALLOWED_ORIGINS = [
   "https://www.wanna-books.ch",
   "https://wanna-books.ch",
   "https://tempo-wanna-project.vercel.app",
-  "https://tempo-wanna-project-cornelbandli.vercel.app"
+  "https://tempo-wanna-project-cornelbandli.vercel.app",
+  "https://tempo-wanna-project.pages.dev"
 ];
 
 function respondCors(req: VercelRequest, res: VercelResponse, status = 200) {
@@ -114,7 +115,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             "https://www.wanna-books.ch",
             "https://wanna-books.ch",
             "https://tempo-wanna-project.vercel.app",
-            "https://tempo-wanna-project-cornelbandli.vercel.app"
+            "https://tempo-wanna-project-cornelbandli.vercel.app",
+            "https://tempo-wanna-project.pages.dev"
           ]
         };
         

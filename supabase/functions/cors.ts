@@ -16,7 +16,8 @@ const ALLOWED_ORIGINS = [
   
   // Produktionsdomains
   "https://tempo-wanna-project-6xlvwe4km-cobands-projects.vercel.app",
-  "https://www.wanna-books.ch"
+  "https://www.wanna-books.ch",
+  "https://tempo-wanna-project.pages.dev"
 ];
 
 // Hilfsfunktion zur Überprüfung, ob ein Origin erlaubt ist

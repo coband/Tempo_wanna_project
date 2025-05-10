@@ -22,7 +22,8 @@ const ALLOWED_ORIGINS = [
   'https://www.wanna-books.ch',
   'https://wanna-books.ch',
   'https://tempo-wanna-project.vercel.app',
-  'https://tempo-wanna-project-cornelbandli.vercel.app'
+  'https://tempo-wanna-project-cornelbandli.vercel.app',
+  'https://tempo-wanna-project.pages.dev'
 ];
 const MODEL_NAME = 'gemini-2.5-flash-preview-04-17';
 const MAX_PROCESSABLE_PDF_SIZE = 200 * 1024 * 1024;

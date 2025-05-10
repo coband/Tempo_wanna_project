@@ -56,7 +56,8 @@ const ALLOWED_ORIGINS = [
   'https://www.wanna-books.ch',
   'https://wanna-books.ch',
   'https://tempo-wanna-project.vercel.app',
-  'https://tempo-wanna-project-cornelbandli.vercel.app'
+  'https://tempo-wanna-project-cornelbandli.vercel.app',
+  'https://tempo-wanna-project.pages.dev'
 ];
 
 // Maximum size for initial text extraction from PDF (5 MB)
@@ -433,7 +434,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             "https://www.wanna-books.ch",
             "https://wanna-books.ch",
             "https://tempo-wanna-project.vercel.app",
-            "https://tempo-wanna-project-cornelbandli.vercel.app"
+            "https://tempo-wanna-project-cornelbandli.vercel.app",
+            "https://tempo-wanna-project.pages.dev"
           ]
         };
         
