@@ -9,7 +9,7 @@ interface Env {
   CLERK_SECRET_KEY: string;
   VITE_CLERK_PUBLISHABLE_KEY: string;
   R2_BUCKET_NAME_ENV?: string;
-  R2_BUCKET_BINDING: R2Bucket;
+  R2_BUCKET_BINDING: R2Bucket; 
   NODE_ENV?: string;
 }
 
