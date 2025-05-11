@@ -115,8 +115,10 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
  */
 export async function fetchPdfs(authToken?: string) {
   try {
-    // Verwende die Cloudflare Pages Function direkt
-    const endpoint = "/api/listPdfs";
+    // URL basierend auf Umgebung bestimmen
+    const isCloudflare = window.location.hostname.includes('pages.dev');
+    // Für Cloudflare direkt /listPdfs verwenden, sonst /api/listPdfs
+    const endpoint = isCloudflare ? "/listPdfs" : "/api/listPdfs";
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
