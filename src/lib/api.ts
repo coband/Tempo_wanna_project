@@ -182,7 +182,7 @@ export async function fetchPdfs(authToken?: string) {
     
     // Cache-busting Parameter für die API-Anfrage hinzufügen
     const cacheBuster = Date.now();
-    const requestUrl = `${endpoint}?_cb=${cacheBuster}`;
+    const requestUrl = `${window.location.origin}${endpoint}?_cb=${cacheBuster}`;
     
     const response = await fetch(requestUrl, {
       method: "GET",
@@ -192,8 +192,21 @@ export async function fetchPdfs(authToken?: string) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || 'Unbekannter Fehler'}`);
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+      
+      console.error('ListPDFs API-Fehler:', {
+        status: response.status,
+        url: requestUrl,
+        response: errorData
+      });
+      
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || errorText || 'Unbekannter Fehler'}`);
     }
 
     const data = await response.json();
@@ -204,6 +217,7 @@ export async function fetchPdfs(authToken?: string) {
 
     return data.files;
   } catch (error) {
+    console.error('ListPDFs Fehler:', error);
     throw error;
   }
 }
