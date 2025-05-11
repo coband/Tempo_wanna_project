@@ -17,6 +17,7 @@ interface Env {
 }
 
 const MODEL_ID = 'gemini-2.5-flash-preview-04-17';
+const MAX_CACHE_AGE = 1000 * 60 * 60; // 1h
 
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -39,71 +40,76 @@ function getCorsHeaders(request: Request): Headers {
   return headers;
 }
 
-/* ---------- utils: stream → base64 (chunked) ---------- */
+/* ---------- utils: stream → Base64 (chunk‑safe) ---------- */
 function uint8ToBase64(u8: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-  return btoa(bin);
+  let binary = '';
+  for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
+  return btoa(binary);
 }
 
-async function streamToBase64(readable: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = readable.getReader();
+async function streamToBase64(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
   let leftover = new Uint8Array(0);
   let base64 = '';
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
+    let chunk = value!;
+
+    // concat with leftover to ensure 3‑byte alignment
     if (leftover.length) {
-      // concat leftover + new chunk to ensure 3‑byte alignment for base64
-      const merged = new Uint8Array(leftover.length + value!.length);
+      const merged = new Uint8Array(leftover.length + chunk.length);
       merged.set(leftover);
-      merged.set(value!, leftover.length);
-      value = merged;
+      merged.set(chunk, leftover.length);
+      chunk = merged;
       leftover = new Uint8Array(0);
     }
-    const remainder = value!.length % 3;
-    const bytesToEncode = remainder ? value!.slice(0, value!.length - remainder) : value!;
+
+    const remainder = chunk.length % 3;
+    const bytesToEncode = remainder ? chunk.slice(0, chunk.length - remainder) : chunk;
     base64 += uint8ToBase64(bytesToEncode);
-    leftover = remainder ? value!.slice(value!.length - remainder) : new Uint8Array(0);
+    leftover = remainder ? chunk.slice(chunk.length - remainder) : leftover;
   }
   if (leftover.length) base64 += uint8ToBase64(leftover);
   return base64;
 }
 
-/* ---------- parse Gemini stream ---------- */
+/* ---------- parse Gemini SSE stream ---------- */
 async function parseGeminiStream(res: Response): Promise<string> {
-  if (!res.body) throw new Error('no body');
+  if (!res.body) throw new Error('No response body');
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let summary = '';
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
+
     const lines = buffer.split('
 ');
     buffer = lines.pop() || '';
+
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       const data = line.slice(6).trim();
       if (data === '[DONE]') break;
       try {
-        const obj = JSON.parse(data);
-        const text = obj.candidates?.[0]?.content?.parts?.[0]?.text;
+        const payload = JSON.parse(data);
+        const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) summary += text;
       } catch {
-        /* ignore JSON parse errors for keep‑alive lines */
+        /* ignore malformed lines */
       }
     }
   }
   return summary.trim();
 }
 
-/* ---------- cache (in‑memory, 1 h) ---------- */
-interface Cached { last: number; data: unknown }
-const cache = new Map<string, Cached>();
-const MAX_AGE = 1000 * 60 * 60;
+/* ---------- simple in‑memory cache ---------- */
+interface CacheEntry { last: number; data: unknown }
+const cache = new Map<string, CacheEntry>();
 
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: getCorsHeaders(request) });
@@ -116,35 +122,36 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   try {
     const auth = await clerk.authenticateRequest(request.clone(), { authorizedParties: ALLOWED_ORIGINS });
     if (!auth.isSignedIn) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) });
-  } catch (e) {
+  } catch {
     return Response.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) });
   }
 
-  /* ---------- params ---------- */
+  /* ---------- query param ---------- */
   const key = new URL(request.url).searchParams.get('key');
   if (!key) return Response.json({ error: 'Missing "key" query param' }, { status: 400, headers: getCorsHeaders(request) });
 
-  const cached = cache.get(key);
+  /* ---------- cache ---------- */
   const now = Date.now();
-  if (cached && now - cached.last < MAX_AGE) {
+  const cached = cache.get(key);
+  if (cached && now - cached.last < MAX_CACHE_AGE) {
     cached.last = now;
     return Response.json(cached.data, { headers: getCorsHeaders(request) });
   }
 
-  /* ---------- fetch PDF (stream) ---------- */
-  let object: R2ObjectBody | null;
+  /* ---------- fetch from R2 (stream) ---------- */
+  let obj: R2ObjectBody | null = null;
   try {
-    object = await env.R2_BUCKET_BINDING.get(key);
-    if (!object) return Response.json({ error: 'File not found' }, { status: 404, headers: getCorsHeaders(request) });
+    obj = await env.R2_BUCKET_BINDING.get(key);
+    if (!obj) return Response.json({ error: 'File not found' }, { status: 404, headers: getCorsHeaders(request) });
   } catch (err) {
-    console.error('R2 error', err);
+    console.error('R2 get error', err);
     return Response.json({ error: 'R2 fetch failed' }, { status: 500, headers: getCorsHeaders(request) });
   }
 
-  const base64Pdf = await streamToBase64(object.body!);
+  const base64Pdf = await streamToBase64(obj.body!);
 
-  /* ---------- call Gemini ---------- */
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:streamGenerateContent?key=${env.GEMINI_API_KEY}`;
+  /* ---------- Gemini call ---------- */
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:streamGenerateContent?key=${env.GEMINI_API_KEY}`;
   const payload = {
     contents: [
       {
@@ -155,15 +162,13 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         ],
       },
     ],
-    generationConfig: {
-      responseMimeType: 'text/plain',
-    },
+    generationConfig: { responseMimeType: 'text/plain' },
     tools: [{ googleSearch: {} }],
   };
 
   let summary = '';
   try {
-    const gRes = await fetch(url, {
+    const gRes = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -175,9 +180,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ error: 'Gemini processing failed' }, { status: 502, headers: getCorsHeaders(request) });
   }
 
-  /* ---------- persist & cache ---------- */
+  /* ---------- persist in Supabase ---------- */
   const supabase = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const metadata = { key, size: object.size, processed_at: new Date().toISOString(), summary };
+  const metadata = { key, size: obj.size, processed_at: new Date().toISOString(), summary };
   try {
     const { error } = await supabase.from('pdf_metadata').insert(metadata);
     if (error) console.error('Supabase insert error', error);
