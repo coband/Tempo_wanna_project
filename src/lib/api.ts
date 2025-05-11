@@ -75,8 +75,17 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
     // URL basierend auf Umgebung bestimmen (analog zu fetchPdfs)
     const isCloudflare = window.location.hostname.includes('pages.dev');
     // Für Cloudflare direkt /processPdf verwenden, sonst /api/processPdf
-    const endpoint = isCloudflare ? "/processPdf" : "/api/processPdf";
+    const basePath = isCloudflare ? "/processPdf" : "/api/processPdf";
 
+    // Der key Parameter sollte exakt der Dateipfad sein, der im R2 Bucket verwendet wird
+    // Stellen wir sicher, dass pdfPath keine Slash am Anfang hat oder andere unerwünschte Zeichen
+    const cleanPdfPath = pdfPath.replace(/^\/+/, '');
+    
+    // Request URL direkt konstruieren
+    const requestUrl = `${window.location.origin}${basePath}?key=${encodeURIComponent(cleanPdfPath)}&question=${encodeURIComponent(question)}&_cb=${Date.now()}`;
+    
+    console.log('PDF-Chat API-Aufruf:', requestUrl);
+    
     // Headers vorbereiten
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -87,33 +96,64 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
       headers["Authorization"] = `Bearer ${authToken}`;
     }
     
-    // Erstelle URL mit Query-Parametern
-    const url = new URL(endpoint, window.location.origin);
-    url.searchParams.append('key', pdfPath);
-    url.searchParams.append('question', encodeURIComponent(question));
-    // Cache-busting Parameter hinzufügen
-    url.searchParams.append('_cb', Date.now().toString());
-    
-    // GET-Anfrage mit Query-Parametern statt POST mit Body
-    const response = await fetch(url.toString(), {
+    // GET-Anfrage mit Query-Parametern
+    const response = await fetch(requestUrl, {
       method: "GET",
       headers,
       cache: "no-store"
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || 'Unbekannter Fehler'}`);
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
+      
+      console.error('PDF-Chat API-Fehler:', {
+        status: response.status,
+        url: requestUrl,
+        response: errorData
+      });
+      
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorData?.error || errorText || 'Unbekannter Fehler'}`);
     }
 
+    // Antwort abrufen und analysieren
     const data = await response.json();
+    console.log('PDF-Chat API-Antwort:', data);
     
-    if (!data || !data.answer) {
+    // Prüfen, ob überhaupt Daten zurückgegeben wurden
+    if (!data) {
+      throw new Error("Leere Antwort von der API erhalten");
+    }
+    
+    // Prüfen, ob answer-Feld vorhanden ist
+    if (!data.answer) {
+      console.warn("API-Antwort enthält kein answer-Feld:", data);
+      
+      // Versuche ein alternatives Feld zu finden
+      for (const field of ['summary', 'text', 'content', 'result']) {
+        if (data[field] && typeof data[field] === 'string' && data[field].trim()) {
+          console.log(`Alternatives Feld '${field}' verwendet`);
+          return data[field];
+        }
+      }
+      
+      // Wenn kein passendes Feld gefunden wurde, wirf einen Fehler
       throw new Error("Keine gültige Antwort von der API erhalten");
+    }
+    
+    // Prüfen, ob die Antwort leer ist
+    if (typeof data.answer !== 'string' || !data.answer.trim()) {
+      throw new Error("Die API hat eine leere Antwort zurückgegeben");
     }
 
     return data.answer;
   } catch (error: any) {
+    console.error('PDF-Chat Fehler:', error);
     throw error;
   }
 }

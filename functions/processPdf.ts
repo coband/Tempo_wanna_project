@@ -76,29 +76,62 @@ function cors(request: Request): Headers {
 // SSE‑Parser: "data: {json}\n" → Text kombinieren -----------------------------
 // -----------------------------------------------------------------------------
 async function parseGeminiSSE(res: Response): Promise<string> {
+  console.log("Parsen der Gemini-Antwort beginnt...");
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') continue;
-      try {
-        const json = JSON.parse(payload);
-        const part = json.candidates?.[0]?.content?.parts?.[0]?.text as string | undefined;
-        if (part) text += part;
-      } catch {
-        /* ignore */
+  let linesProcessed = 0;
+  let jsonParsed = 0;
+  
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value, { stream: true });
+      console.log(`Empfangener Chunk (${value.length} Bytes):`, chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
+      
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      linesProcessed += lines.length;
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6);
+        if (payload === '[DONE]') continue;
+        
+        try {
+          const json = JSON.parse(payload);
+          jsonParsed++;
+          
+          console.log("Geparste JSON:", JSON.stringify(json).substring(0, 100) + "...");
+          
+          const part = json.candidates?.[0]?.content?.parts?.[0]?.text as string | undefined;
+          if (part) {
+            console.log("Extrahierter Text:", part.substring(0, 100) + (part.length > 100 ? '...' : ''));
+            text += part;
+          } else {
+            console.log("Keine text-Eigenschaft gefunden in:", JSON.stringify(json.candidates?.[0]?.content?.parts?.[0] || {}).substring(0, 100) + "...");
+          }
+        } catch (e) {
+          console.error("JSON-Parse-Fehler:", e, "für Payload:", payload.substring(0, 100) + "...");
+        }
       }
     }
+  } catch (error) {
+    console.error("Fehler beim Parsen der SSE-Antwort:", error);
   }
+  
+  console.log(`SSE-Verarbeitung abgeschlossen. Verarbeitet: ${linesProcessed} Zeilen, ${jsonParsed} JSON-Objekte, Ergebnis: ${text.length} Zeichen`);
+  
+  if (!text.trim()) {
+    console.warn("Leere Antwort von Gemini erhalten. Fallback-Text verwenden.");
+    return "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
+  }
+  
   return text.trim();
 }
 
@@ -239,6 +272,11 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const answer = await parseGeminiSSE(geminiRes);
+  
+  // Fallback für leere Antworten
+  const finalAnswer = answer.trim() 
+    ? answer 
+    : "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
 
   // -------------------------------------------------------------------------
   // 4. Supabase persistieren --------------------------------------------------
@@ -250,7 +288,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
       size: obj.size, 
       processed_at: new Date().toISOString(), 
       question: decodedQuestion, 
-      answer 
+      answer: finalAnswer 
     };
     
     // Wir fangen Supabase-Fehler ab, aber lassen sie die Hauptfunktionalität nicht beeinflussen
@@ -267,7 +305,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     // -------------------------------------------------------------------------
     // Vereinfachte Antwortstruktur, die nur das Wichtigste enthält
     const responseData = {
-      answer: answer, // Das einzige, was das Frontend wirklich braucht
+      answer: finalAnswer, // Das einzige, was das Frontend wirklich braucht
       key: key,       // Optional für Debug-Zwecke
       question: decodedQuestion // Optional für Debug-Zwecke
     };
