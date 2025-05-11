@@ -257,7 +257,7 @@ const BookManagement = ({
 
     // Wenn nur Filter aktiv sind und kein Suchbegriff, setze displayQuery entsprechend
     if (hasActiveFilters && !hasActiveSearch) {
-      setDisplayQuery("Aktive Filter"); 
+      setDisplayQuery(""); // War vorher "Aktive Filter", jetzt leer
     } else if (!hasActiveFilters && !hasActiveSearch) {
       setDisplayQuery(""); // Kein Suchbegriff, keine Filter
     }
