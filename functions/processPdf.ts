@@ -73,13 +73,11 @@ function cors(request: Request): Headers {
 }
 
 // -----------------------------------------------------------------------------
-// SSE‑Parser: "data: {json}\n" → Text kombinieren -----------------------------
-// -----------------------------------------------------------------------------
+// SSE‑Parser: "data: {json}\n" → Text kombinieren
 async function parseGeminiSSE(res: Response): Promise<string> {
   console.log("Parsen der Gemini-Antwort beginnt...");
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
   let text = '';
   let rawResponse = '';
   
@@ -90,137 +88,41 @@ async function parseGeminiSSE(res: Response): Promise<string> {
       if (done) break;
       
       const chunk = decoder.decode(value, { stream: true });
-      console.log(`Empfangener Chunk (${value.length} Bytes):`, chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
-      
       rawResponse += chunk;
     }
     
-    console.log("Vollständige Rohsantwort empfangen, Länge:", rawResponse.length);
-    
-    // Prüfen, ob wir eine Antwort im JSON-Format haben
-    if (rawResponse.trim().startsWith('[{') && rawResponse.trim().endsWith(']')) {
-      try {
-        // Versuche das gesamte JSON-Array zu parsen
-        const jsonArray = JSON.parse(rawResponse);
-        console.log("JSON-Array geparst, Länge:", jsonArray.length);
-        
-        // Extrahiere Text aus allen Kandidaten und Parts
-        for (const item of jsonArray) {
-          if (item.candidates && Array.isArray(item.candidates)) {
-            for (const candidate of item.candidates) {
-              if (candidate.content && candidate.content.parts) {
-                for (const part of candidate.content.parts) {
-                  if (part.text) {
-                    text += part.text;
-                  }
-                }
-              }
-            }
-          }
-        }
-        
-        console.log("Extrahierter Text (ersten 100 Zeichen):", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-      } catch (parseError) {
-        console.error("Fehler beim Parsen des JSON-Arrays:", parseError);
-      }
-    } else {
-      // Alternative Methode: Nach Textteilen suchen
-      console.log("Keine gültige JSON-Array-Struktur erkannt, versuche Regex-Extraktion");
-      
-      // Versuche, Text-Werte mit einem Regex zu extrahieren
-      const textMatches = rawResponse.match(/"text":\s*"([^"]*)"/g);
+    // Einfache Extraktion des Textes aus der Antwort
+    if (rawResponse) {
+      // Nach "text": Feldern suchen
+      const textMatches = Array.from(rawResponse.matchAll(/"text"\s*:\s*"(.*?)(?<!\\)"/gs));
       if (textMatches && textMatches.length > 0) {
         console.log(`${textMatches.length} Text-Matches gefunden`);
         
         for (const match of textMatches) {
-          const textValue = match.replace(/"text":\s*"/, '').replace(/"$/, '');
-          // Escaped JSON-Zeichen dekodieren
-          const decodedText = textValue.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-          text += decodedText;
-        }
-        
-        console.log("Extrahierter Text via Regex (ersten 100 Zeichen):", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-      } else {
-        console.warn("Keine Text-Werte gefunden");
-      }
-    }
-    
-    // Falls noch keine Antwort extrahiert wurde, versuche eine dritte Methode
-    if (!text.trim()) {
-      console.log("Versuche zeilenbasierte JSON-Extraktion");
-      
-      // Zeilen splitten und jede Zeile einzeln als JSON parsen versuchen
-      const lines = rawResponse.split('\n');
-      
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (trimmedLine && (trimmedLine.startsWith('{') || trimmedLine.startsWith('['))) {
-          try {
-            let jsonObj;
-            if (trimmedLine.startsWith('[')) {
-              // Versuche Array zu parsen
-              jsonObj = JSON.parse(trimmedLine);
-              if (Array.isArray(jsonObj) && jsonObj.length > 0) {
-                for (const item of jsonObj) {
-                  extractTextFromObject(item);
-                }
-              }
-            } else {
-              // Versuche Objekt zu parsen
-              jsonObj = JSON.parse(trimmedLine);
-              extractTextFromObject(jsonObj);
-            }
-            
-            // Hilfsfunktion zum rekursiven Extrahieren von Text
-            function extractTextFromObject(obj: any) {
-              if (!obj) return;
-              
-              if (typeof obj === 'object') {
-                // Durchsuche alle Eigenschaften rekursiv
-                for (const key in obj) {
-                  if (key === 'text' && typeof obj[key] === 'string') {
-                    text += obj[key];
-                  } else if (typeof obj[key] === 'object') {
-                    extractTextFromObject(obj[key]);
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            // Ignoriere Parsing-Fehler für einzelne Zeilen
-          }
-        }
-      }
-      
-      console.log("Extrahierter Text nach zeilenweiser Extraktion (ersten 100 Zeichen):", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-    }
-    
-    // Direkte Extraktion: Suche nach Inhalt zwischen Anführungszeichen nach "text":
-    if (!text.trim()) {
-      const rawTextMatches = Array.from(rawResponse.matchAll(/"text"\s*:\s*"(.*?)(?<!\\)"/gs));
-      if (rawTextMatches.length > 0) {
-        for (const match of rawTextMatches) {
           if (match[1]) {
-            // Escaped Zeichen dekodieren
-            let decodedText = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            // Nur escaped Zeichen dekodieren, keine weitere Formatierung
+            const decodedText = match[1]
+              .replace(/\\n/g, '\n')
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, '\\')
+              .replace(/\\t/g, '\t');
             text += decodedText;
           }
         }
-        console.log("Text durch direkte Extraktion gefunden:", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
       }
     }
+    
+    if (!text.trim()) {
+      console.warn("Keine Textteile gefunden, Fallback-Text verwenden");
+      return "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
+    }
+    
+    console.log("Extrahierter Text (unformatiert):", text.substring(0, 200) + (text.length > 200 ? '...' : ''));
+    return text; // Text unverändert zurückgeben
   } catch (error) {
-    console.error("Fehler beim Parsen der SSE-Antwort:", error);
+    console.error("Fehler beim Parsen der Gemini-Antwort:", error);
+    return "Es ist ein Fehler beim Verarbeiten der Anfrage aufgetreten. Bitte versuche es später noch einmal.";
   }
-  
-  console.log(`Extraktion abgeschlossen. Ergebnis: ${text.length} Zeichen`);
-  
-  if (!text.trim()) {
-    console.warn("Leere Antwort von Gemini erhalten. Fallback-Text verwenden.");
-    return "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
-  }
-  
-  return text.trim();
 }
 
 // -----------------------------------------------------------------------------
