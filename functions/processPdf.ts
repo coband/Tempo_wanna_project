@@ -78,47 +78,61 @@ async function parseGeminiSSE(res: Response): Promise<string> {
   console.log("Parsen der Gemini-Antwort beginnt...");
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
-  let text = '';
-  let rawResponse = '';
+  let combinedContent = "";
   
   try {
-    // Vollständigen Rohtext sammeln
+    // Sammle alle Textblöcke aus der Antwort
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       
+      // Dekodiere den Chunk und füge ihn zum gesammelten Text hinzu
       const chunk = decoder.decode(value, { stream: true });
-      rawResponse += chunk;
+      combinedContent += chunk;
     }
     
-    // Einfache Extraktion des Textes aus der Antwort
-    if (rawResponse) {
-      // Nach "text": Feldern suchen
-      const textMatches = Array.from(rawResponse.matchAll(/"text"\s*:\s*"(.*?)(?<!\\)"/gs));
-      if (textMatches && textMatches.length > 0) {
-        console.log(`${textMatches.length} Text-Matches gefunden`);
-        
-        for (const match of textMatches) {
-          if (match[1]) {
-            // Nur escaped Zeichen dekodieren, keine weitere Formatierung
-            const decodedText = match[1]
-              .replace(/\\n/g, '\n')
-              .replace(/\\"/g, '"')
-              .replace(/\\\\/g, '\\')
-              .replace(/\\t/g, '\t');
-            text += decodedText;
+    console.log("Rohtext gesammelt, versuche Content zu extrahieren");
+    
+    // Extrahiere direkt den Content aus den JSON-Zeilen
+    let contentParts: string[] = [];
+    
+    // Suche nach "data: {...}" Zeilen und extrahiere den Content
+    const dataMatches = combinedContent.matchAll(/data: ({.*?})\n/g);
+    
+    if (dataMatches) {
+      for (const match of Array.from(dataMatches)) {
+        try {
+          const jsonData = JSON.parse(match[1]);
+          
+          // Extrahiere Text aus der Gemini-Antwortstruktur
+          if (jsonData.candidates && 
+              jsonData.candidates[0] && 
+              jsonData.candidates[0].content && 
+              jsonData.candidates[0].content.parts) {
+            
+            for (const part of jsonData.candidates[0].content.parts) {
+              if (part.text) {
+                contentParts.push(part.text);
+              }
+            }
           }
+        } catch (parseError) {
+          console.warn("Fehler beim Parsen eines JSON-Chunks:", parseError);
+          // Ignoriere diesen Chunk und mache mit dem nächsten weiter
         }
       }
     }
     
-    if (!text.trim()) {
-      console.warn("Keine Textteile gefunden, Fallback-Text verwenden");
+    // Kombiniere alle gefundenen Textteile
+    const fullText = contentParts.join("");
+    
+    if (!fullText.trim()) {
+      console.warn("Keine Textteile gefunden, fallback auf Fehlermeldung");
       return "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
     }
     
-    console.log("Extrahierter Text (unformatiert):", text.substring(0, 200) + (text.length > 200 ? '...' : ''));
-    return text; // Text unverändert zurückgeben
+    console.log("Extrahierter Text:", fullText.substring(0, 200) + (fullText.length > 200 ? '...' : ''));
+    return fullText;
   } catch (error) {
     console.error("Fehler beim Parsen der Gemini-Antwort:", error);
     return "Es ist ein Fehler beim Verarbeiten der Anfrage aufgetreten. Bitte versuche es später noch einmal.";
