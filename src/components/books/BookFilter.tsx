@@ -98,6 +98,8 @@ export function BookFilter({
   const [isMobile, setIsMobile] = useState(false);
   // Verhindert initiales Rendering mit geöffneten Filtern
   const [isInitialRender, setIsInitialRender] = useState(true);
+  // Flag, um zu verfolgen, ob der Filter manuell geschlossen wurde
+  const [manuallyToggled, setManuallyToggled] = useState(false);
 
   // Überprüfen, ob es sich um ein mobiles Gerät handelt und Filter schließen
   // Verwende useLayoutEffect statt useEffect für bessere visuelle Performance
@@ -105,9 +107,10 @@ export function BookFilter({
     const checkIfMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile) {
-        setIsFilterOpen(false);
-      }
+      // Wir schließen den Filter nicht automatisch bei Mobilgeräten
+      // if (mobile) {
+      //   setIsFilterOpen(false);
+      // }
     };
     
     // Initial check
@@ -125,6 +128,7 @@ export function BookFilter({
   useEffect(() => {
     if (isMobile) {
       setIsFilterOpen(false);
+      setManuallyToggled(false);
     }
   }, [isMobile]);
 
@@ -501,6 +505,12 @@ export function BookFilter({
     </div>
   );
   
+  // Funktion zum Umschalten des Filters mit Tracking
+  const toggleFilter = (open: boolean) => {
+    setIsFilterOpen(open);
+    setManuallyToggled(true);
+  };
+
   // Mobile Filter-Button mit Dropdown
   if (isMobile) {
     return (
@@ -508,12 +518,16 @@ export function BookFilter({
         <div className="flex justify-between items-center">
           <Collapsible 
             open={isFilterOpen} 
-            onOpenChange={setIsFilterOpen}
+            onOpenChange={toggleFilter}
             className="w-full"
           >
             <div className="flex justify-between items-center">
               <CollapsibleTrigger asChild>
-                <Button variant="outline" className="mb-2">
+                <Button 
+                  variant="outline" 
+                  className="mb-2"
+                  onClick={() => setManuallyToggled(true)}
+                >
                   <Filter className="h-4 w-4 mr-2" />
                   <span>Filter</span>
                   {activeFilterCount > 0 && (
@@ -542,7 +556,10 @@ export function BookFilter({
                 </Button>
               )}
             </div>
-            <CollapsibleContent className="mt-2">
+            <CollapsibleContent 
+              className="mt-2"
+              style={{ position: 'absolute', width: 'calc(100% - 2rem)', backgroundColor: 'white', zIndex: 50, borderRadius: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' }}
+            >
               <FilterContent />
             </CollapsibleContent>
           </Collapsible>
