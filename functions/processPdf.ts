@@ -3,24 +3,24 @@
 // -----------------------------------------------------------------------------
 // Ablauf
 // ======
-// 1. Prüfe Clerk‑Auth + CORS.
+// 1. Prüfe Clerk‑Auth + CORS.
 // 2. Lade ein PDF‐Objekt aus R2 (`?key=` Query‑Param).
 // 3. Lade es *streamend* via **Gemini Files API** (`media.upload` – Resumable)
 //    hoch und erhalte `file_uri` zurück. (→ kein Base64 im Speicher)
 // 4. Schicke `file_uri` an `models:streamGenerateContent` + Prompt.
 // 5. Persistiere Metadaten & Summary in Supabase.
-// 6. Cache das Ergebnis 1 h In‑Memory und antworte als JSON.
+// 6. Cache das Ergebnis 1 h In‑Memory und antworte als JSON.
 //
 // Kompatibilität
 // --------------
 // * Läuft nativ in Cloudflare Workers (Web‑APIs, keine Node‑Polyfills).
-// * Verwendet *fetch + Streaming* für großen PDF‑Upload (> 5 MB).
+// * Verwendet *fetch + Streaming* für großen PDF‑Upload (> 5 MB).
 // * Clerk‑JWT‑Verifizierung ohne Middleware.
 //
 // Quellen
 // -------
-// • Gemini Files API – `media.upload` endpoint ([ai.google.dev](https://ai.google.dev/api/files))
-// • Beispiel für Resumable‑Header ([googlecloudcommunity.com](https://www.googlecloudcommunity.com/gc/AI-ML/Gemini-API-method-models-generateContent-returns-error-code-400/m-p/831749?utm_source=chatgpt.com))
+// • Gemini Files API – `media.upload` endpoint ([ai.google.dev](https://ai.google.dev/api/files))
+// • Beispiel für Resumable‑Header ([googlecloudcommunity.com](https://www.googlecloudcommunity.com/gc/AI-ML/Gemini-API-method-models-generateContent-returns-error-code-400/m-p/831749?utm_source=chatgpt.com))
 // -----------------------------------------------------------------------------
 
 import type { PagesFunction } from '@cloudflare/workers-types';
@@ -43,7 +43,7 @@ export interface Env {
 // Konstante Einstellungen ------------------------------------------------------
 // -----------------------------------------------------------------------------
 const MODEL_ID = 'gemini-2.5-flash-preview-04-17';
-const MAX_CACHE_AGE = 1000 * 60 * 60; // 1 h
+const MAX_CACHE_AGE = 1000 * 60 * 60; // 1 h
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'https://tempo-wanna-project.pages.dev',
@@ -123,13 +123,18 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ error: 'Method not allowed' }, { status: 405, headers: cors(request) });
   }
 
-  // Query param ?key
-  const key = new URL(request.url).searchParams.get('key');
+  // URL Parameter abrufen
+  const url = new URL(request.url);
+  const key = url.searchParams.get('key');
+  const question = url.searchParams.get('question') || 'Bitte gib mir eine kurze Zusammenfassung auf Deutsch.';
+  
+  // Parameter validieren
   if (!key) return Response.json({ error: 'Missing "key"' }, { status: 400, headers: cors(request) });
 
-  // Cache Hit?
+  // Cache Hit? Wir müssen auch den Frage-Parameter berücksichtigen
+  const cacheKey = `${key}:${question}`;
   const now = Date.now();
-  const c = cache.get(key);
+  const c = cache.get(cacheKey);
   if (c && now - c.last < MAX_CACHE_AGE) {
     c.last = now; // sliding
     return Response.json(c.data, { headers: cors(request) });
@@ -203,6 +208,10 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   // -------------------------------------------------------------------------
   // 3. streamGenerateContent --------------------------------------------------
   // -------------------------------------------------------------------------
+  // URL-decodierte Benutzerfrage verwenden
+  const decodedQuestion = decodeURIComponent(question);
+  console.log('Verarbeite Frage:', decodedQuestion);
+  
   const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:streamGenerateContent?key=${env.GEMINI_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -211,12 +220,15 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         {
           role: 'user',
           parts: [
-            { text: 'Bitte gib mir eine kurze Zusammenfassung auf Deutsch.' },
+            { text: decodedQuestion },
             { file_data: { mime_type: 'application/pdf', file_uri: fileUri } },
           ],
         },
       ],
-      generationConfig: { temperature: 0.3, maxOutputTokens: 256 },
+      generationConfig: { 
+        temperature: 0.3, 
+        maxOutputTokens: 1024 // Erhöhen des Token-Limits für längere Antworten
+      },
     }),
   });
 
@@ -226,13 +238,20 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ error: 'Gemini summary failed', detail: msg }, { status: 502, headers: cors(request) });
   }
 
-  const summary = await parseGeminiSSE(geminiRes);
+  const answer = await parseGeminiSSE(geminiRes);
 
   // -------------------------------------------------------------------------
   // 4. Supabase persistieren --------------------------------------------------
   // -------------------------------------------------------------------------
   const supabase = createSupabase(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const metadata = { key, size: obj.size, processed_at: new Date().toISOString(), summary };
+  const metadata = { 
+    key, 
+    size: obj.size, 
+    processed_at: new Date().toISOString(), 
+    question: decodedQuestion, 
+    answer 
+  };
+  
   try {
     const { error } = await supabase.from('pdf_metadata').insert(metadata);
     if (error) console.error('Supabase insert error', error);
@@ -243,6 +262,12 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   // -------------------------------------------------------------------------
   // 5. Cache + Antwort --------------------------------------------------------
   // -------------------------------------------------------------------------
-  cache.set(key, { last: Date.now(), data: metadata });
-  return Response.json(metadata, { headers: cors(request) });
+  // Antwortstruktur, wie sie vom Frontend erwartet wird
+  const responseData = { 
+    ...metadata,
+    answer: answer  // Das Feld "answer" muss auf der obersten Ebene sein
+  };
+  
+  cache.set(cacheKey, { last: Date.now(), data: responseData });
+  return Response.json(responseData, { headers: cors(request) });
 };
