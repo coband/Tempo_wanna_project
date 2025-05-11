@@ -72,17 +72,28 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
  */
 export async function askPdfQuestion(pdfPath: string, question: string, authToken?: string) {
   try {
-    // URL basierend auf Umgebung bestimmen (analog zu fetchPdfs)
-    const isCloudflare = window.location.hostname.includes('pages.dev');
-    // Für Cloudflare direkt /processPdf verwenden, sonst /api/processPdf
+    // Domain-Erkennung mit erweiterter Bedingung und Logging
+    const hostname = window.location.hostname;
+    console.log('Hostname:', hostname);
+    
+    // Cloudflare oder Produktions-Domain erkennen
+    const isCloudflare = hostname.includes('pages.dev') || hostname.includes('wanna-books.ch');
+    console.log('isCloudflare erkannt:', isCloudflare);
+    
+    // Für Cloudflare oder Produktion direkt /processPdf verwenden, sonst /api/processPdf
     const basePath = isCloudflare ? "/processPdf" : "/api/processPdf";
 
     // Der key Parameter sollte exakt der Dateipfad sein, der im R2 Bucket verwendet wird
     // Stellen wir sicher, dass pdfPath keine Slash am Anfang hat oder andere unerwünschte Zeichen
     const cleanPdfPath = pdfPath.replace(/^\/+/, '');
     
-    // Request URL direkt konstruieren
-    const requestUrl = `${window.location.origin}${basePath}?key=${encodeURIComponent(cleanPdfPath)}&question=${encodeURIComponent(question)}&_cb=${Date.now()}`;
+    // Absolute URL direkt verwenden, wenn auf Produktionsdomäne
+    const baseUrl = hostname.includes('wanna-books.ch') 
+      ? 'https://www.wanna-books.ch'
+      : window.location.origin;
+    
+    // Request URL konstruieren
+    const requestUrl = `${baseUrl}${basePath}?key=${encodeURIComponent(cleanPdfPath)}&question=${encodeURIComponent(question)}&_cb=${Date.now()}`;
     
     console.log('PDF-Chat API-Aufruf:', requestUrl);
     
@@ -165,9 +176,15 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
  */
 export async function fetchPdfs(authToken?: string) {
   try {
-    // URL basierend auf Umgebung bestimmen
-    const isCloudflare = window.location.hostname.includes('pages.dev');
-    // Für Cloudflare direkt /listPdfs verwenden, sonst /api/listPdfs
+    // Domain-Erkennung mit erweiterter Bedingung und Logging
+    const hostname = window.location.hostname;
+    console.log('Hostname:', hostname);
+    
+    // Cloudflare oder Produktions-Domain erkennen
+    const isCloudflare = hostname.includes('pages.dev') || hostname.includes('wanna-books.ch');
+    console.log('isCloudflare erkannt:', isCloudflare);
+    
+    // Für Cloudflare oder Produktion direkt /listPdfs verwenden, sonst /api/listPdfs
     const endpoint = isCloudflare ? "/listPdfs" : "/api/listPdfs";
 
     // Headers vorbereiten
@@ -182,7 +199,13 @@ export async function fetchPdfs(authToken?: string) {
     
     // Cache-busting Parameter für die API-Anfrage hinzufügen
     const cacheBuster = Date.now();
-    const requestUrl = `${window.location.origin}${endpoint}?_cb=${cacheBuster}`;
+    
+    // Absolute URL direkt verwenden, wenn auf Produktionsdomäne
+    const requestUrl = hostname.includes('wanna-books.ch') 
+      ? `https://www.wanna-books.ch${endpoint}?_cb=${cacheBuster}`
+      : `${window.location.origin}${endpoint}?_cb=${cacheBuster}`;
+    
+    console.log('ListPDFs API-Aufruf:', requestUrl);
     
     const response = await fetch(requestUrl, {
       method: "GET",
