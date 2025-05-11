@@ -1,240 +1,238 @@
 // -----------------------------------------------------------------------------
-// functions/processPdf.ts – Cloudflare Pages Function
+// functions/processPdf.ts – Cloudflare Pages Function (REST w/ Gemini File API)
 // -----------------------------------------------------------------------------
-// Aufgabe
-// -------
-// 1. Hole eine PDF‑Datei aus einem an Pages‑Functions gebundenen R2‑Bucket
-//    (Query‑Parameter: ?key=path/to/file.pdf).
-// 2. Wandle die PDF in Base64 um.
-// 3. Schicke den Base64‑String an die Google Gemini‑REST‑API
-//    (streamGenerateContent) und erhalte eine deutsche Kurz‑Zusammenfassung
-//    der Datei (Streaming‑SSE).
-// 4. Speichere Metadaten + Summary in Supabase.
-// 5. Gib die Metadaten als JSON zurück und cache sie für 1 h
-//    (in‑memory, pro Worker‑Instance).
+// Ablauf
+// ======
+// 1. Prüfe Clerk‑Auth + CORS.
+// 2. Lade ein PDF‐Objekt aus R2 (`?key=` Query‑Param).
+// 3. Lade es *streamend* via **Gemini Files API** (`media.upload` – Resumable)
+//    hoch und erhalte `file_uri` zurück. (→ kein Base64 im Speicher)
+// 4. Schicke `file_uri` an `models:streamGenerateContent` + Prompt.
+// 5. Persistiere Metadaten & Summary in Supabase.
+// 6. Cache das Ergebnis 1 h In‑Memory und antworte als JSON.
 //
-// Der Code richtet sich **strikt** nach der Cloudflare‑Workers / Pages‑Functions
-// Runtime (Web‑Standard‑APIs, kein Node‑Polyfill) und TypeScript 5.
+// Kompatibilität
+// --------------
+// * Läuft nativ in Cloudflare Workers (Web‑APIs, keine Node‑Polyfills).
+// * Verwendet *fetch + Streaming* für großen PDF‑Upload (> 5 MB).
+// * Clerk‑JWT‑Verifizierung ohne Middleware.
+//
+// Quellen
+// -------
+// • Gemini Files API – `media.upload` endpoint ([ai.google.dev](https://ai.google.dev/api/files))
+// • Beispiel für Resumable‑Header ([googlecloudcommunity.com](https://www.googlecloudcommunity.com/gc/AI-ML/Gemini-API-method-models-generateContent-returns-error-code-400/m-p/831749?utm_source=chatgpt.com))
 // -----------------------------------------------------------------------------
+
 import type { PagesFunction } from '@cloudflare/workers-types';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabase } from '@supabase/supabase-js';
 import { createClerkClient } from '@clerk/backend';
 
 // -----------------------------------------------------------------------------
-// Environment‑Binding‑Schnittstelle
+// Env‑Binding‑Interface ---------------------------------------------------------
 // -----------------------------------------------------------------------------
 export interface Env {
+  R2_BUCKET_BINDING: R2Bucket;
+  GEMINI_API_KEY: string;
   VITE_SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
-  GEMINI_API_KEY: string;
   CLERK_SECRET_KEY: string;
   VITE_CLERK_PUBLISHABLE_KEY: string;
-  R2_BUCKET_BINDING: R2Bucket;
-  NODE_ENV?: string;
 }
 
 // -----------------------------------------------------------------------------
-// Konstanten
+// Konstante Einstellungen ------------------------------------------------------
 // -----------------------------------------------------------------------------
 const MODEL_ID = 'gemini-2.5-flash-preview-04-17';
-const MAX_CACHE_AGE = 1000 * 60 * 60; // 1 h (In‑Memory pro Worker‑Instance)
-
+const MAX_CACHE_AGE = 1000 * 60 * 60; // 1 h
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://www.wanna-books.ch',
-  'https://wanna-books.ch',
-  'https://tempo-wanna-project.vercel.app',
-  'https://tempo-wanna-project-cornelbandli.vercel.app',
   'https://tempo-wanna-project.pages.dev',
+  'https://wanna-books.ch',
 ];
 
-// -----------------------------------------------------------------------------
-// Hilfsfunktionen
-// -----------------------------------------------------------------------------
-function getCorsHeaders(request: Request): Headers {
-  const headers = new Headers();
-  headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  headers.set('Access-Control-Allow-Credentials', 'true');
-  headers.set('Vary', 'Origin');
-  const origin = request.headers.get('Origin');
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    headers.set('Access-Control-Allow-Origin', origin);
-  }
-  return headers;
-}
-
-/**
- * Liest einen ReadableStream vollständig und gibt **Base64‑kodierte** Daten
- * zurück. Arbeitet ohne Buffer/Node. Für PDFs bis ~10 MB absolut ausreichend.
- */
-async function streamToBase64(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of stream) chunks.push(chunk);
-
-  const size = chunks.reduce((n, c) => n + c.length, 0);
-  const u8 = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    u8.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  let binary = '';
-  for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
-  return btoa(binary);
-}
-
-/**
- * Parst das SSE‑Streaming‑Format von *streamGenerateContent* (Gemini‑REST).
- * Gibt den zusammengesetzten Fließtext zurück.
- */
-async function parseGeminiStream(res: Response): Promise<string> {
-  const decoder = new TextDecoder();
-  const reader = res.body!.getReader();
-  let buffer = '';
-  let summary = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    // Zeilen nach "\n" separieren → typische SSE‑Form: "data: {json}\n".
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') continue;
-
-      try {
-        const payload = JSON.parse(data);
-        const text = payload.candidates?.[0]?.content?.parts?.[0]?.text as string | undefined;
-        if (text) summary += text;
-      } catch {
-        /* JSON‑Fehler einfach ignorieren */
-      }
-    }
-  }
-
-  return summary.trim();
-}
-
-// -----------------------------------------------------------------------------
-// Simpler In‑Memory‑Cache (pro Worker‑Instance)
-// -----------------------------------------------------------------------------
+// In‑Memory‑Cache (pro Worker‑Instance)
 interface CacheEntry {
-  last: number; // Timestamp → Sliding‑Expiration
+  last: number;
   data: unknown;
 }
 const cache = new Map<string, CacheEntry>();
 
 // -----------------------------------------------------------------------------
-// Haupt‑Handler
+// Utils ------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+function cors(request: Request): Headers {
+  const h = new Headers({
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
+  });
+  const origin = request.headers.get('Origin');
+  if (origin && ALLOWED_ORIGINS.includes(origin)) h.set('Access-Control-Allow-Origin', origin);
+  return h;
+}
+
+// -----------------------------------------------------------------------------
+// SSE‑Parser: "data: {json}\n" → Text kombinieren -----------------------------
+// -----------------------------------------------------------------------------
+async function parseGeminiSSE(res: Response): Promise<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6);
+      if (payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload);
+        const part = json.candidates?.[0]?.content?.parts?.[0]?.text as string | undefined;
+        if (part) text += part;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return text.trim();
+}
+
+// -----------------------------------------------------------------------------
+// Haupt‑Handler ---------------------------------------------------------------
 // -----------------------------------------------------------------------------
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
-  // ----- CORS Pre‑flight
-  if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: getCorsHeaders(request) });
-  }
+  // CORS Pre‑flight
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(request) });
 
-  // ----- Nur GET oder POST zulassen
-  if (!['GET', 'POST'].includes(request.method)) {
-    return Response.json(
-      { error: 'Method not allowed' },
-      { status: 405, headers: getCorsHeaders(request) },
-    );
-  }
-
-  // ----- Clerk‑Authentifizierung
-  const clerk = createClerkClient({
-    secretKey: env.CLERK_SECRET_KEY,
-    publishableKey: env.VITE_CLERK_PUBLISHABLE_KEY,
-  });
-
+  // Clerk Auth ----------------------------------------------------------------
+  const clerk = createClerkClient({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.VITE_CLERK_PUBLISHABLE_KEY });
   try {
-    const auth = await clerk.authenticateRequest(request.clone(), {
-      authorizedParties: ALLOWED_ORIGINS,
-    });
-    if (!auth.isSignedIn) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) });
-    }
+    const auth = await clerk.authenticateRequest(request.clone());
+    if (!auth.isSignedIn) throw new Error('not signed in');
   } catch {
-    return Response.json({ error: 'Unauthorized' }, { status: 401, headers: getCorsHeaders(request) });
+    return Response.json({ error: 'Unauthorized' }, { status: 401, headers: cors(request) });
   }
 
-  // ----- Query‑Parameter »key« prüfen
+  // Nur GET zulassen
+  if (request.method !== 'GET') {
+    return Response.json({ error: 'Method not allowed' }, { status: 405, headers: cors(request) });
+  }
+
+  // Query param ?key
   const key = new URL(request.url).searchParams.get('key');
-  if (!key) {
-    return Response.json({ error: 'Missing "key" query param' }, { status: 400, headers: getCorsHeaders(request) });
-  }
+  if (!key) return Response.json({ error: 'Missing "key"' }, { status: 400, headers: cors(request) });
 
-  // ----- Cache‑Hit? (Sliding‑Expiration)
+  // Cache Hit?
   const now = Date.now();
-  const cached = cache.get(key);
-  if (cached && now - cached.last < MAX_CACHE_AGE) {
-    cached.last = now;
-    return Response.json(cached.data, { headers: getCorsHeaders(request) });
+  const c = cache.get(key);
+  if (c && now - c.last < MAX_CACHE_AGE) {
+    c.last = now; // sliding
+    return Response.json(c.data, { headers: cors(request) });
   }
 
-  // ----- PDF aus R2 holen (als Stream)
+  // PDF aus R2 holen (Streaming)
   let obj: R2ObjectBody | null = null;
   try {
     obj = await env.R2_BUCKET_BINDING.get(key);
-    if (!obj) {
-      return Response.json({ error: 'File not found' }, { status: 404, headers: getCorsHeaders(request) });
-    }
+    if (!obj) return Response.json({ error: 'File not found' }, { status: 404, headers: cors(request) });
   } catch (err) {
-    console.error('R2 get error', err);
-    return Response.json({ error: 'R2 fetch failed' }, { status: 500, headers: getCorsHeaders(request) });
+    console.error('R2 error', err);
+    return Response.json({ error: 'R2 fetch failed' }, { status: 500, headers: cors(request) });
   }
 
-  // ----- PDF → Base64
-  const base64Pdf = await streamToBase64(obj.body!);
+  // -------------------------------------------------------------------------
+  // 1. Resumable Upload – "start" ------------------------------------------
+  // -------------------------------------------------------------------------
+  const startRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${env.GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Type': 'application/pdf',
+      'X-Goog-Upload-Header-Content-Length': obj.size.toString(),
+    },
+    body: JSON.stringify({ file: { displayName: key.split('/').pop() } }),
+  });
 
-  // ----- Gemini‑Aufruf (Streaming)
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:streamGenerateContent?key=${env.GEMINI_API_KEY}`;
-  const payload = {
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { file_data: { mime_type: 'application/pdf', data: base64Pdf } },
-          { text: 'Bitte gib mir eine kurze Zusammenfassung auf Deutsch.' },
-        ],
-      },
-    ],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 256 },
-  };
+  if (!startRes.ok) {
+    const msg = await startRes.text();
+    console.error('Gemini upload start failed', msg);
+    return Response.json({ error: 'Gemini upload start failed', detail: msg }, { status: 502, headers: cors(request) });
+  }
 
-  let summary = '';
+  const uploadUrl = startRes.headers.get('X-Goog-Upload-URL');
+  if (!uploadUrl) {
+    return Response.json({ error: 'Upload URL missing' }, { status: 502, headers: cors(request) });
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Resumable Upload – "upload, finalize" --------------------------------
+  // -------------------------------------------------------------------------
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/pdf',
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'upload, finalize',
+      'X-Goog-Upload-Offset': '0',
+    },
+    body: obj.body, // stream direkt weiterleiten
+  });
+
+  if (!uploadRes.ok) {
+    const msg = await uploadRes.text();
+    console.error('Gemini upload failed', msg);
+    return Response.json({ error: 'Gemini upload failed', detail: msg }, { status: 502, headers: cors(request) });
+  }
+
+  let fileUri: string | undefined;
   try {
-    const gRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!gRes.ok) throw new Error(`Gemini HTTP ${gRes.status}`);
+    const { uri } = (await uploadRes.json()).file ?? {};
+    fileUri = uri;
+  } catch {
+    /* ignore */
+  }
+  if (!fileUri) return Response.json({ error: 'file_uri missing' }, { status: 502, headers: cors(request) });
 
-    summary = await parseGeminiStream(gRes);
-  } catch (err) {
-    console.error('Gemini error', err);
-    return Response.json({ error: 'Gemini processing failed' }, { status: 502, headers: getCorsHeaders(request) });
+  // -------------------------------------------------------------------------
+  // 3. streamGenerateContent --------------------------------------------------
+  // -------------------------------------------------------------------------
+  const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:streamGenerateContent?key=${env.GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: 'Bitte gib mir eine kurze Zusammenfassung auf Deutsch.' },
+            { file_data: { mime_type: 'application/pdf', file_uri: fileUri } },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 256 },
+    }),
+  });
+
+  if (!geminiRes.ok) {
+    const msg = await geminiRes.text();
+    console.error('Gemini summary failed', msg);
+    return Response.json({ error: 'Gemini summary failed', detail: msg }, { status: 502, headers: cors(request) });
   }
 
-  // ----- Metadaten in Supabase persistieren
-  const supabase = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const metadata = {
-    key,
-    size: obj.size,
-    processed_at: new Date().toISOString(),
-    summary,
-  };
+  const summary = await parseGeminiSSE(geminiRes);
 
+  // -------------------------------------------------------------------------
+  // 4. Supabase persistieren --------------------------------------------------
+  // -------------------------------------------------------------------------
+  const supabase = createSupabase(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+  const metadata = { key, size: obj.size, processed_at: new Date().toISOString(), summary };
   try {
     const { error } = await supabase.from('pdf_metadata').insert(metadata);
     if (error) console.error('Supabase insert error', error);
@@ -242,7 +240,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     console.error('Supabase error', err);
   }
 
-  // ----- Cache aktualisieren & Antwort
+  // -------------------------------------------------------------------------
+  // 5. Cache + Antwort --------------------------------------------------------
+  // -------------------------------------------------------------------------
   cache.set(key, { last: Date.now(), data: metadata });
-  return Response.json(metadata, { headers: getCorsHeaders(request) });
+  return Response.json(metadata, { headers: cors(request) });
 };
