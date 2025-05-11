@@ -243,31 +243,47 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   // -------------------------------------------------------------------------
   // 4. Supabase persistieren --------------------------------------------------
   // -------------------------------------------------------------------------
-  const supabase = createSupabase(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-  const metadata = { 
-    key, 
-    size: obj.size, 
-    processed_at: new Date().toISOString(), 
-    question: decodedQuestion, 
-    answer 
-  };
-  
   try {
-    const { error } = await supabase.from('pdf_metadata').insert(metadata);
-    if (error) console.error('Supabase insert error', error);
-  } catch (err) {
-    console.error('Supabase error', err);
-  }
+    const supabase = createSupabase(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+    const metadata = { 
+      key, 
+      size: obj.size, 
+      processed_at: new Date().toISOString(), 
+      question: decodedQuestion, 
+      answer 
+    };
+    
+    // Wir fangen Supabase-Fehler ab, aber lassen sie die Hauptfunktionalität nicht beeinflussen
+    try {
+      const { error } = await supabase.from('pdf_metadata').insert(metadata);
+      if (error) console.error('Supabase insert error', error);
+    } catch (err) {
+      console.error('Supabase error', err);
+      // Wir ignorieren Supabase-Fehler, da sie für die Hauptfunktionalität nicht kritisch sind
+    }
 
-  // -------------------------------------------------------------------------
-  // 5. Cache + Antwort --------------------------------------------------------
-  // -------------------------------------------------------------------------
-  // Antwortstruktur, wie sie vom Frontend erwartet wird
-  const responseData = { 
-    ...metadata,
-    answer: answer  // Das Feld "answer" muss auf der obersten Ebene sein
-  };
-  
-  cache.set(cacheKey, { last: Date.now(), data: responseData });
-  return Response.json(responseData, { headers: cors(request) });
+    // -------------------------------------------------------------------------
+    // 5. Cache + Antwort --------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Vereinfachte Antwortstruktur, die nur das Wichtigste enthält
+    const responseData = {
+      answer: answer, // Das einzige, was das Frontend wirklich braucht
+      key: key,       // Optional für Debug-Zwecke
+      question: decodedQuestion // Optional für Debug-Zwecke
+    };
+    
+    // Im Cache speichern
+    cache.set(cacheKey, { last: Date.now(), data: responseData });
+    
+    // Zum Debuggen die Antwort in die Konsole schreiben
+    console.log("Sende Antwort:", JSON.stringify(responseData).substring(0, 100) + "...");
+    
+    return Response.json(responseData, { headers: cors(request) });
+  } catch (finalError) {
+    console.error("Unerwarteter Fehler:", finalError);
+    return Response.json({ 
+      error: "Unerwarteter Fehler beim Verarbeiten der Anfrage", 
+      details: finalError.message 
+    }, { status: 500, headers: cors(request) });
+  }
 };
