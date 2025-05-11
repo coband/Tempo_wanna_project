@@ -384,6 +384,31 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
     // Zum Debuggen die Antwort in die Konsole schreiben
     console.log("Sende Antwort:", JSON.stringify(responseData).substring(0, 100) + "...");
     
+    // -------------------------------------------------------------------------
+    // 5. Datei aus Gemini File API löschen ---------------------------------
+    // -------------------------------------------------------------------------
+    try {
+      // Extrahieren des Dateinamens aus der URI (format: files/abc-123)
+      const fileName = fileUri.split('/').pop();
+      const fileApiName = `files/${fileName}`;
+      
+      console.log(`Lösche Datei von Gemini File API: ${fileApiName}`);
+      
+      const deleteRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileApiName}?key=${env.GEMINI_API_KEY}`, {
+        method: 'DELETE',
+      });
+      
+      if (deleteRes.ok) {
+        console.log(`Datei ${fileApiName} erfolgreich gelöscht`);
+      } else {
+        const errorMsg = await deleteRes.text();
+        console.error(`Fehler beim Löschen der Datei ${fileApiName}:`, errorMsg);
+      }
+    } catch (deleteError) {
+      console.error("Fehler beim Löschen der Datei:", deleteError);
+      // Wir ignorieren Fehler beim Löschen, um die Hauptfunktionalität nicht zu beeinträchtigen
+    }
+    
     return Response.json(responseData, { headers: cors(request) });
   } catch (finalError) {
     console.error("Unerwarteter Fehler:", finalError);
