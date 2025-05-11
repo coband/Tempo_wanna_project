@@ -54,57 +54,27 @@ async function streamToBase64(stream: ReadableStream<Uint8Array>): Promise<strin
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    let chunk = value!;
 
-    // concat with leftover to ensure 3‑byte alignment
-    if (leftover.length) {
-      const merged = new Uint8Array(leftover.length + chunk.length);
-      merged.set(leftover);
-      merged.set(chunk, leftover.length);
-      chunk = merged;
-      leftover = new Uint8Array(0);
-    }
-
-    const remainder = chunk.length % 3;
-    const bytesToEncode = remainder ? chunk.slice(0, chunk.length - remainder) : chunk;
-    base64 += uint8ToBase64(bytesToEncode);
-    leftover = remainder ? chunk.slice(chunk.length - remainder) : leftover;
-  }
-  if (leftover.length) base64 += uint8ToBase64(leftover);
-  return base64;
-}
-
-/* ---------- parse Gemini SSE stream ---------- */
-async function parseGeminiStream(res: Response): Promise<string> {
-  if (!res.body) throw new Error('No response body');
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let summary = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
+    // decode chunk and normalise line breaks
     buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer = (buffer + decoder.decode(value, { stream: true })).replace(/
+    buffer = buffer.replace(/
 ?/g, '
 ');
 
-    const lines = buffer.split('
+    const parts = buffer.split('
 ');
-    buffer = lines.pop() || '';
+    buffer = parts.pop() || '';
 
-    for (const line of lines) {
+    for (const line of parts) {
       if (!line.startsWith('data: ')) continue;
       const data = line.slice(6).trim();
-      if (data === '[DONE]') break;
+      if (data === '[DONE]') continue;
       try {
         const payload = JSON.parse(data);
         const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) summary += text;
       } catch {
-        /* ignore malformed lines */
+        // ignore malformed JSON
       }
     }
   }
