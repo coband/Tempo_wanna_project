@@ -72,8 +72,10 @@ export async function fetchBookInfo(isbn: string, authToken?: string) {
  */
 export async function askPdfQuestion(pdfPath: string, question: string, authToken?: string) {
   try {
-    // Verwende die Cloudflare Pages Function direkt
-    const endpoint = "/api/processPdf";
+    // URL basierend auf Umgebung bestimmen (analog zu fetchPdfs)
+    const isCloudflare = window.location.hostname.includes('pages.dev');
+    // Für Cloudflare direkt /processPdf verwenden, sonst /api/processPdf
+    const endpoint = isCloudflare ? "/processPdf" : "/api/processPdf";
 
     // Headers vorbereiten
     const headers: Record<string, string> = {
@@ -85,10 +87,18 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
       headers["Authorization"] = `Bearer ${authToken}`;
     }
     
-    const response = await fetch(endpoint, {
-      method: "POST",
+    // Erstelle URL mit Query-Parametern
+    const url = new URL(endpoint, window.location.origin);
+    url.searchParams.append('key', pdfPath);
+    url.searchParams.append('question', encodeURIComponent(question));
+    // Cache-busting Parameter hinzufügen
+    url.searchParams.append('_cb', Date.now().toString());
+    
+    // GET-Anfrage mit Query-Parametern statt POST mit Body
+    const response = await fetch(url.toString(), {
+      method: "GET",
       headers,
-      body: JSON.stringify({ pdfPath, question }),
+      cache: "no-store"
     });
 
     if (!response.ok) {
