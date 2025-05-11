@@ -87,6 +87,10 @@ async function parseGeminiStream(res: Response): Promise<string> {
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
+    const lines = buffer = (buffer + decoder.decode(value, { stream: true })).replace(/
+?/g, '
+');
+
     const lines = buffer.split('
 ');
     buffer = lines.pop() || '';
