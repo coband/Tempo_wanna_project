@@ -73,7 +73,7 @@ function cors(request: Request): Headers {
 }
 
 // -----------------------------------------------------------------------------
-// SSE‑Parser: "data: {json}\n" → Text kombinieren - Vereinfachte Version
+// SSE‑Parser: Extrahiert und kombiniert Text aus JSON-Blöcken
 async function parseGeminiSSE(res: Response): Promise<string> {
   console.log("Parsen der Gemini-Antwort beginnt...");
   const reader = res.body!.getReader();
@@ -91,16 +91,111 @@ async function parseGeminiSSE(res: Response): Promise<string> {
       rawText += chunk;
     }
     
-    // Vollständigen Rohtext loggen für Debugging
-    console.log("Vollständiger Rohtext:", rawText.substring(0, 500) + "..." + (rawText.length > 1000 ? rawText.substring(rawText.length - 500) : ""));
+    // Extrahiere alle JSON-Objekte 
+    // Gemini antwortet im Format: Objekt1, Objekt2, Objekt3, ...
+    const combinedText: string[] = [];
     
-    // Einfache Fallback-Antwort bei leerem Text
-    if (!rawText.trim()) {
+    // Versuche, den Text als JSON-Array zu parsen
+    // Die rohe Antwort beginnt mit '[' und endet mit ']'
+    try {
+      // Wenn es wie ein Array aussieht, versuche es als Array zu parsen
+      if (rawText.trim().startsWith('[') && rawText.trim().endsWith(']')) {
+        const jsonArray = JSON.parse(rawText) as any[];
+        console.log(`Gefundene JSON-Objekte: ${jsonArray.length}`);
+        
+        // Durchlaufe alle Objekte im Array
+        for (const jsonObj of jsonArray) {
+          // Extrahiere Text aus candidates[0].content.parts[].text
+          if (jsonObj.candidates && 
+              jsonObj.candidates[0] && 
+              jsonObj.candidates[0].content &&
+              jsonObj.candidates[0].content.parts) {
+            
+            for (const part of jsonObj.candidates[0].content.parts) {
+              if (part.text) {
+                combinedText.push(part.text);
+              }
+            }
+          }
+        }
+      } else {
+        // Alternativ: Suche nach einzelnen JSON-Objekten im Text
+        // Muster: Ein JSON-Objekt pro Zeile nach "data: "
+        const jsonPattern = /data:\s*({.*?})\n/g;
+        const matches = Array.from(rawText.matchAll(jsonPattern));
+        
+        console.log(`Gefundene JSON-Objekte mit Regex: ${matches.length}`);
+        
+        for (const match of matches) {
+          try {
+            const jsonObj = JSON.parse(match[1]);
+            
+            // Extrahiere Text aus candidates[0].content.parts[].text
+            if (jsonObj.candidates && 
+                jsonObj.candidates[0] && 
+                jsonObj.candidates[0].content &&
+                jsonObj.candidates[0].content.parts) {
+              
+              for (const part of jsonObj.candidates[0].content.parts) {
+                if (part.text) {
+                  combinedText.push(part.text);
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("Fehler beim Parsen eines JSON-Objekts:", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Fehler beim Parsen des JSON-Arrays:", e);
+      
+      // Fallback: Versuche, die JSON-Objekte einzeln zu parsen
+      // Trenne den Text an Kommas, die zwischen den JSON-Objekten stehen könnten
+      const parts = rawText.split('} , {');
+      const jsonBlocks: string[] = parts.map((block, i) => {
+        // Erster Block beginnt mit '['
+        if (i === 0) return block.startsWith('[') ? block : '{' + block;
+        // Letzter Block endet mit ']'
+        if (i === parts.length - 1) return block.endsWith(']') ? block : block + '}';
+        // Mittlere Blöcke
+        return '{' + block + '}';
+      });
+      
+      console.log(`Gefundene JSON-Blöcke durch Splitting: ${jsonBlocks.length}`);
+      
+      for (const block of jsonBlocks) {
+        try {
+          const jsonObj = JSON.parse(block) as any;
+          
+          // Extrahiere Text aus candidates[0].content.parts[].text
+          if (jsonObj.candidates && 
+              jsonObj.candidates[0] && 
+              jsonObj.candidates[0].content &&
+              jsonObj.candidates[0].content.parts) {
+            
+            for (const part of jsonObj.candidates[0].content.parts) {
+              if (part.text) {
+                combinedText.push(part.text);
+              }
+            }
+          }
+        } catch (e) {
+          // Ignoriere fehlerhafte JSON-Blöcke
+        }
+      }
+    }
+    
+    // Kombiniere alle gefundenen Textteile
+    const resultText = combinedText.join("");
+    
+    if (!resultText.trim()) {
+      console.warn("Keine Textteile extrahiert, verwende Fallback-Text");
       return "Es tut mir leid, aber ich konnte keine Informationen zu diesem PDF extrahieren. Bitte versuche es mit einer anderen Frage oder einem anderen PDF.";
     }
     
-    // Den gesamten Rohtext zurückgeben
-    return rawText;
+    console.log("Extrahierter Text:", resultText.substring(0, 200) + (resultText.length > 200 ? '...' : ''));
+    return resultText;
   } catch (error) {
     console.error("Fehler beim Parsen der Gemini-Antwort:", error);
     return "Es ist ein Fehler beim Verarbeiten der Anfrage aufgetreten. Bitte versuche es später noch einmal.";
@@ -231,8 +326,9 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
         },
       ],
       generationConfig: { 
-        temperature: 0.3, 
-        maxOutputTokens: 1024 // Erhöhen des Token-Limits für längere Antworten
+        temperature: 0.3,
+        maxOutputTokens: 4096, // Erhöhung des Ausgabe-Limits für deutlich längere Antworten
+        responseMimeType: "text/plain"
       },
     }),
   });
