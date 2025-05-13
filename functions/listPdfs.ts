@@ -1,6 +1,6 @@
 // ----------------------------------------------
 // functions/lisPdfs.ts
-// Cloudflare Pages Function – list objects in an R2 bucket
+// Cloudflare Pages Function – list objects in an R2 bucket
 // ----------------------------------------------
 import type { PagesFunction } from '@cloudflare/workers-types';
 import { createClerkClient } from '@clerk/backend';

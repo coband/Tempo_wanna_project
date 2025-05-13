@@ -1,27 +1,8 @@
-name = "dein-worker-name" # Wähle einen Namen für deinen Worker # Passe dies an den Pfad und Namen deiner Haupt-Worker-Datei an
-compatibility_date = "2024-05-10" # Verwende ein aktuelles Datum
+name = "tempo-pdf-worker"
+compatibility_date = "2024-05-10"
 
-# Füge hier deine R2 Bucket Bindings hinzu
+# R2 Bucket Konfiguration
 [[r2_buckets]]
-binding = "R2_BUCKET_BINDING"         # Dies ist der Name, den du im Code (env.R2_BUCKET_BINDING) verwendest
-bucket_name = "books" # Ersetze dies durch den tatsächlichen Namen deines R2 Buckets
-# preview_bucket_name = "dein-r2-bucket-name-preview" # Optional für `wrangler dev` in einer Preview-Umgebung
-
-# Wenn du Umgebungsvariablen (Secrets oder Plaintext) für lokale Entwicklung definieren möchtest:
-# Diese werden bei `wrangler deploy` NICHT automatisch hochgeladen.
-# Secrets müssen im Cloudflare Dashboard gesetzt werden.
-# Plaintext-Variablen können auch hier definiert und hochgeladen werden.
-# [vars]
-# VITE_SUPABASE_URL = "deine_supabase_url_hier"
-# VITE_CLERK_PUBLISHABLE_KEY = "dein_clerk_publishable_key_hier"
-# R2_BUCKET_NAME_ENV = "dein-r2-bucket-name" # Wenn du den Bucketnamen zusätzlich als Variable brauchst
-
-# Aktiviere Node.js Kompatibilitäts-Flags, falls deine SDKs das erfordern
-# (oft nützlich für SDKs, die ursprünglich für Node.js geschrieben wurden)
-[nodejs_compat]
-# enabled = true # Einkommentieren, falls benötigt
-
-# Für TypeScript-Projekte ist es oft nicht nötig, hier explizit Build-Schritte zu definieren,
-# da Wrangler dies oft automatisch erkennt. Falls doch, hier ein Beispiel:
-# [build]
-# command = "npm run build" # Wenn du ein separates Build-Skript in package.json hast
+binding = "R2_BUCKET_BINDING"         # Name für den Zugriff im Code über env.R2_BUCKET_BINDING
+bucket_name = "books"    # Produktions-Bucket Name
+preview_bucket_name = "books" # Preview-Bucket für wrangler dev --remote

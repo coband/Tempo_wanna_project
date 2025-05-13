@@ -152,18 +152,20 @@ export function PdfProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       // Fehler beim Laden der PDFs
       console.error("Fehler beim Laden der PDFs:", error);
+      // Auch im Fehlerfall als geladen markieren, um endlose Schleifen zu vermeiden
+      initialLoadDoneRef.current = true;
     } finally {
       setIsLoadingPdfs(false);
     }
   };
   
-  // Beim ersten Laden PDFs abrufen
+  // Beim ersten Laden PDFs abrufen - Abhängigkeitsliste verbessert
   useEffect(() => {
-    // Nur PDFs laden, wenn wir noch keine PDFs haben UND nicht bereits laden
-    if (availablePdfs.length === 0 && !isLoadingPdfs && !initialLoadDoneRef.current) {
+    // Nur PDFs laden, wenn wir noch nicht geladen haben
+    if (!initialLoadDoneRef.current && !isLoadingPdfs) {
       loadPdfs();
     }
-  }, [availablePdfs.length, isLoadingPdfs]);
+  }, [isLoadingPdfs]);
   
   // Verwende useCallback für die refreshPdfs-Funktion
   const refreshPdfs = useCallback(async () => {

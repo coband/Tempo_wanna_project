@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:cf": "wrangler pages dev . --r2=R2_BUCKET_BINDING --compatibility-flag=nodejs_compat",
+    "r2:seed": "./scripts/seed-r2.sh",
+    "dev:remote": "wrangler dev --remote --compatibility-flag=nodejs_compat",
+    "start": "npm run r2:seed && npm run dev:cf",
     "build": "tsc ; vite build",
     "build-no-errors": "tsc ; vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",

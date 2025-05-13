@@ -92,8 +92,8 @@ export async function askPdfQuestion(pdfPath: string, question: string, authToke
       ? 'https://www.wanna-books.ch'
       : window.location.origin;
     
-    // Request URL konstruieren
-    const requestUrl = `${baseUrl}${basePath}?key=${encodeURIComponent(cleanPdfPath)}&question=${encodeURIComponent(question)}&_cb=${Date.now()}`;
+    // Request URL konstruieren, ohne Cache-Buster da dies für Fragen nicht nötig ist
+    const requestUrl = `${baseUrl}${basePath}?key=${encodeURIComponent(cleanPdfPath)}&question=${encodeURIComponent(question)}`;
     
     console.log('PDF-Chat API-Aufruf:', requestUrl);
     
@@ -197,20 +197,35 @@ export async function fetchPdfs(authToken?: string) {
       headers["Authorization"] = `Bearer ${authToken}`;
     }
     
-    // Cache-busting Parameter für die API-Anfrage hinzufügen
-    const cacheBuster = Date.now();
+    // Cache-Strategie verbessern - nur alle 5 Minuten aktualisieren
+    // Statische Variable für den letzten API-Aufruf und die Ergebnisse
+    if (!fetchPdfs.lastFetchTime) {
+      fetchPdfs.lastFetchTime = 0;
+      fetchPdfs.cachedResults = null;
+    }
+    
+    // Prüfen, ob der Cache noch gültig ist (nicht älter als 5 Minuten)
+    const now = Date.now();
+    const cacheAge = now - fetchPdfs.lastFetchTime;
+    const cacheValidDuration = 5 * 60 * 1000; // 5 Minuten in Millisekunden
+    
+    // Wenn wir gültige Ergebnisse im Cache haben, verwenden wir diese
+    if (fetchPdfs.cachedResults && cacheAge < cacheValidDuration) {
+      console.log('Verwende zwischengespeicherte PDF-Liste (Alter:', Math.round(cacheAge/1000), 's)');
+      return fetchPdfs.cachedResults;
+    }
     
     // Absolute URL direkt verwenden, wenn auf Produktionsdomäne
     const requestUrl = hostname.includes('wanna-books.ch') 
-      ? `https://www.wanna-books.ch${endpoint}?_cb=${cacheBuster}`
-      : `${window.location.origin}${endpoint}?_cb=${cacheBuster}`;
+      ? `https://www.wanna-books.ch${endpoint}`
+      : `${window.location.origin}${endpoint}`;
     
     console.log('ListPDFs API-Aufruf:', requestUrl);
     
     const response = await fetch(requestUrl, {
       method: "GET",
       headers,
-      // Cache-Kontrolle hinzufügen
+      // Cache-Kontrolle festlegen - wir verwenden jetzt unseren eigenen Cache
       cache: "no-store"
     });
 
@@ -238,9 +253,21 @@ export async function fetchPdfs(authToken?: string) {
       throw new Error("Keine gültigen Daten von der API erhalten");
     }
 
+    // Ergebnisse im Cache speichern
+    fetchPdfs.lastFetchTime = now;
+    fetchPdfs.cachedResults = data.files;
+    
     return data.files;
   } catch (error) {
     console.error('ListPDFs Fehler:', error);
     throw error;
+  }
+}
+
+// Typdefinitionen für die statischen Eigenschaften der fetchPdfs-Funktion
+declare global {
+  interface Function {
+    lastFetchTime?: number;
+    cachedResults?: any;
   }
 }

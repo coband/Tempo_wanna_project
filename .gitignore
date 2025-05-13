@@ -36,3 +36,11 @@ dist-ssr
 
 core
 .vercel
+
+.dev.vars
+
+# Wrangler
+.wrangler/
+
+# Test fixtures (große Dateien)
+fixtures/**/*.pdf

@@ -23,5 +23,12 @@ export default defineConfig({
   },
   server: {
     allowedHosts: process.env.TEMPO === "true" ? true : undefined,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8788',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      }
+    }
   },
 });
