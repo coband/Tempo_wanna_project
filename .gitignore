@@ -37,10 +37,10 @@ dist-ssr
 core
 .vercel
 
+# Cloudflare Worker
+.wrangler
+ 
 .dev.vars
 
-# Wrangler
-.wrangler/
-
-# Test fixtures (große Dateien)
+ # Test fixtures (große Dateien)
 fixtures/**/*.pdf
